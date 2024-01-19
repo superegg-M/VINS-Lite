@@ -38,6 +38,7 @@ cd build
 ```c++
 cd build
 ../bin/run_euroc /home/dataset/EuRoC/MH-05/mav0/ ../config/
+../bin/run_euroc /home/cain/mav0/ ../config/
 ```
 ![vins](doc/vins.gif)
 
