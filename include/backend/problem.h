@@ -42,17 +42,17 @@ public:
 
     ~Problem();
 
-    bool AddVertex(std::shared_ptr<Vertex> vertex);
+    bool AddVertex(const std::shared_ptr<Vertex>& vertex);
 
     /**
      * remove a vertex
      * @param vertex_to_remove
      */
-    bool RemoveVertex(std::shared_ptr<Vertex> vertex);
+    bool RemoveVertex(const std::shared_ptr<Vertex>& vertex);
 
-    bool AddEdge(std::shared_ptr<Edge> edge);
+    bool AddEdge(const std::shared_ptr<Edge>& edge);
 
-    bool RemoveEdge(std::shared_ptr<Edge> edge);
+    bool RemoveEdge(const std::shared_ptr<Edge>& edge);
 
     /**
      * 取得在优化中被判断为outlier部分的边，方便前端去除outlier
@@ -72,12 +72,13 @@ public:
                      const std::vector<std::shared_ptr<Vertex>> &landmarkVerticies);
 
     bool Marginalize(const std::shared_ptr<Vertex> frameVertex);
-    bool Marginalize(const std::vector<std::shared_ptr<Vertex> > frameVertex,int pose_dim);
+    bool Marginalize(const std::vector<std::shared_ptr<Vertex> > frameVertex,int pose_dim, double prior_lambda);
 
     MatXX GetHessianPrior(){ return H_prior_;}
     VecX GetbPrior(){ return b_prior_;}
     VecX GetErrPrior(){ return err_prior_;}
     MatXX GetJtPrior(){ return Jt_prior_inv_;}
+    double getCurrentLambda() const { return currentLambda_; }
 
     void SetHessianPrior(const MatXX& H){H_prior_ = H;}
     void SetbPrior(const VecX& b){b_prior_ = b;}
@@ -101,7 +102,7 @@ private:
     void SetOrdering();
 
     /// set ordering for new vertex in slam problem
-    void AddOrderingSLAM(std::shared_ptr<Vertex> v);
+    void AddOrderingSLAM(const std::shared_ptr<Vertex>& v);
 
     /// 构造大H矩阵
     void MakeHessian();
@@ -110,7 +111,7 @@ private:
     void SchurSBA();
 
     /// 解线性方程
-    void SolveLinearSystem();
+    bool SolveLinearSystem();
 
     /// 更新状态变量
     void UpdateStates();
@@ -127,7 +128,7 @@ private:
     bool IsLandmarkVertex(std::shared_ptr<Vertex> v);
 
     /// 在新增顶点后，需要调整几个hessian的大小
-    void ResizePoseHessiansWhenAddingPose(std::shared_ptr<Vertex> v);
+    void ResizePoseHessiansWhenAddingPose(const std::shared_ptr<Vertex>& v);
 
     /// 检查ordering是否正确
     bool CheckOrdering();
@@ -135,7 +136,7 @@ private:
     void LogoutVectorSize();
 
     /// 获取某个顶点连接到的边
-    std::vector<std::shared_ptr<Edge>> GetConnectedEdges(std::shared_ptr<Vertex> vertex);
+    std::vector<std::shared_ptr<Edge>> GetConnectedEdges(const std::shared_ptr<Vertex>& vertex);
 
     /// Levenberg
     /// 计算LM算法的初始Lambda
@@ -152,7 +153,10 @@ private:
     /// PCG 迭代线性求解器
     VecX PCGSolver(const MatXX &A, const VecX &b, int maxIter);
 
+    // MatXX MultiPCGSolver(const MatXX &A, const MatXX &B, int maxIter);
+
     double currentLambda_;
+    VecX _diag_lambda;
     double currentChi_;
     double stopThresholdLM_;    // LM 迭代退出阈值条件
     double ni_;                 //控制 Lambda 缩放大小

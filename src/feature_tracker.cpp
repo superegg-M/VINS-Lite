@@ -10,6 +10,7 @@ bool inBorder(const cv::Point2f &pt)
     return BORDER_SIZE <= img_x && img_x < COL - BORDER_SIZE && BORDER_SIZE <= img_y && img_y < ROW - BORDER_SIZE;
 }
 
+// 只有保留status大于0的元素 
 void reduceVector(vector<cv::Point2f> &v, vector<uchar> status)
 {
     int j = 0;
@@ -19,6 +20,7 @@ void reduceVector(vector<cv::Point2f> &v, vector<uchar> status)
     v.resize(j);
 }
 
+// 只有保留status大于0的元素 
 void reduceVector(vector<int> &v, vector<uchar> status)
 {
     int j = 0;
@@ -47,6 +49,7 @@ void FeatureTracker::setMask()
     for (unsigned int i = 0; i < forw_pts.size(); i++)
         cnt_pts_id.push_back(make_pair(track_cnt[i], make_pair(forw_pts[i], ids[i])));
 
+    // 根据跟踪次数进行排序
     sort(cnt_pts_id.begin(), cnt_pts_id.end(), [](const pair<int, pair<cv::Point2f, int>> &a, const pair<int, pair<cv::Point2f, int>> &b)
          {
             return a.first > b.first;
@@ -58,16 +61,17 @@ void FeatureTracker::setMask()
 
     for (auto &it : cnt_pts_id)
     {
-        if (mask.at<uchar>(it.second.first) == 255)
+        if (mask.at<uchar>(it.second.first) == 255)     // 如果该区域没被mask, 则进行mask
         {
             forw_pts.push_back(it.second.first);
             ids.push_back(it.second.second);
             track_cnt.push_back(it.first);
-            cv::circle(mask, it.second.first, MIN_DIST, 0, -1);
+            cv::circle(mask, it.second.first, MIN_DIST, 0, -1);     // 0代表赋0, 而-1表带实心圆
         }
     }
 }
 
+// 把特征点检测出的点n_pts加入光流点forw_pts中
 void FeatureTracker::addPoints()
 {
     for (auto &p : n_pts)
@@ -113,8 +117,9 @@ void FeatureTracker::readImage(const cv::Mat &_img, double _cur_time)
         cv::calcOpticalFlowPyrLK(cur_img, forw_img, cur_pts, forw_pts, status, err, cv::Size(21, 21), 3);
 
         for (int i = 0; i < int(forw_pts.size()); i++)
-            if (status[i] && !inBorder(forw_pts[i]))
+            if (status[i] && !inBorder(forw_pts[i]))    // 若超过边界, 依然会把该点的跟踪设为失败
                 status[i] = 0;
+        // TODO: 使用list代替vector也能实现更快的删除, 但是cur_pts和forw_pts必须为数组        
         reduceVector(prev_pts, status);
         reduceVector(cur_pts, status);
         reduceVector(forw_pts, status);
@@ -124,21 +129,21 @@ void FeatureTracker::readImage(const cv::Mat &_img, double _cur_time)
         //ROS_DEBUG("temporal optical flow costs: %fms", t_o.toc());
     }
 
-    for (auto &n : track_cnt)
+    for (auto &n : track_cnt)   // 每个点的跟踪次数加一
         n++;
 
     if (PUB_THIS_FRAME)
     {
-        rejectWithF();
+        rejectWithF();  // 根据基础矩阵过滤掉一部分outliner的点
         //ROS_DEBUG("set mask begins");
         TicToc t_m;
-        setMask();
+        setMask();      // 计算mask, 并且mask掉不需要的点
         //ROS_DEBUG("set mask costs %fms", t_m.toc());
 
         //ROS_DEBUG("detect feature begins");
         TicToc t_t;
         int n_max_cnt = MAX_CNT - static_cast<int>(forw_pts.size());
-        if (n_max_cnt > 0)
+        if (n_max_cnt > 0)      // 由于对点进行了过滤和mask, 所以会存在点不够的情况
         {
             if(mask.empty())
                 cout << "mask is empty " << endl;
@@ -146,6 +151,8 @@ void FeatureTracker::readImage(const cv::Mat &_img, double _cur_time)
                 cout << "mask type wrong " << endl;
             if (mask.size() != forw_img.size())
                 cout << "wrong size " << endl;
+
+            // 角点提取(默认为shi-tomasi, 传入true则为Harris)    
             cv::goodFeaturesToTrack(forw_img, n_pts, MAX_CNT - forw_pts.size(), 0.01, MIN_DIST, mask);
         }
         else
@@ -154,7 +161,7 @@ void FeatureTracker::readImage(const cv::Mat &_img, double _cur_time)
 
         //ROS_DEBUG("add feature begins");
         TicToc t_a;
-        addPoints();
+        addPoints();    // 把特征点n_pts加入光流点forw_pts中
         //ROS_DEBUG("selectFeature costs: %fms", t_a.toc());
     }
     prev_img = cur_img;
@@ -162,7 +169,7 @@ void FeatureTracker::readImage(const cv::Mat &_img, double _cur_time)
     prev_un_pts = cur_un_pts;
     cur_img = forw_img;
     cur_pts = forw_pts;
-    undistortedPoints();
+    undistortedPoints();    // 计算光流点的速度
     prev_time = cur_time;
 }
 
@@ -176,18 +183,18 @@ void FeatureTracker::rejectWithF()
         for (unsigned int i = 0; i < cur_pts.size(); i++)
         {
             Eigen::Vector3d tmp_p;
-            m_camera->liftProjective(Eigen::Vector2d(cur_pts[i].x, cur_pts[i].y), tmp_p);
+            m_camera->liftProjective(Eigen::Vector2d(cur_pts[i].x, cur_pts[i].y), tmp_p);   // 将像素坐标转化为无畸变的归一化坐标
             tmp_p.x() = FOCAL_LENGTH * tmp_p.x() / tmp_p.z() + COL / 2.0;
             tmp_p.y() = FOCAL_LENGTH * tmp_p.y() / tmp_p.z() + ROW / 2.0;
             un_cur_pts[i] = cv::Point2f(tmp_p.x(), tmp_p.y());
 
-            m_camera->liftProjective(Eigen::Vector2d(forw_pts[i].x, forw_pts[i].y), tmp_p);
+            m_camera->liftProjective(Eigen::Vector2d(forw_pts[i].x, forw_pts[i].y), tmp_p); // 将像素坐标转化为无畸变的归一化坐标
             tmp_p.x() = FOCAL_LENGTH * tmp_p.x() / tmp_p.z() + COL / 2.0;
             tmp_p.y() = FOCAL_LENGTH * tmp_p.y() / tmp_p.z() + ROW / 2.0;
             un_forw_pts[i] = cv::Point2f(tmp_p.x(), tmp_p.y());
         }
 
-        vector<uchar> status;
+        vector<uchar> status;   // 标记在计算基础矩阵时, outliner的点
         cv::findFundamentalMat(un_cur_pts, un_forw_pts, cv::FM_RANSAC, F_THRESHOLD, 0.99, status);
         int size_a = cur_pts.size();
         reduceVector(prev_pts, status);
@@ -228,7 +235,7 @@ void FeatureTracker::showUndistortion(const string &name)
         {
             Eigen::Vector2d a(i, j);
             Eigen::Vector3d b;
-            m_camera->liftProjective(a, b);
+            m_camera->liftProjective(a, b);     // 将像素坐标转化为无畸变的归一化坐标
             distortedp.push_back(a);
             undistortedp.push_back(Eigen::Vector2d(b.x() / b.z(), b.y() / b.z()));
             //printf("%f,%f->%f,%f,%f\n)\n", a.x(), a.y(), b.x(), b.y(), b.z());
@@ -264,7 +271,7 @@ void FeatureTracker::undistortedPoints()
     {
         Eigen::Vector2d a(cur_pts[i].x, cur_pts[i].y);
         Eigen::Vector3d b;
-        m_camera->liftProjective(a, b);
+        m_camera->liftProjective(a, b);     // 将像素坐标转化为无畸变的归一化坐标
         cur_un_pts.push_back(cv::Point2f(b.x() / b.z(), b.y() / b.z()));
         cur_un_pts_map.insert(make_pair(ids[i], cv::Point2f(b.x() / b.z(), b.y() / b.z())));
         //printf("cur pts id %d %f %f", ids[i], cur_un_pts[i].x, cur_un_pts[i].y);
@@ -276,11 +283,11 @@ void FeatureTracker::undistortedPoints()
         pts_velocity.clear();
         for (unsigned int i = 0; i < cur_un_pts.size(); i++)
         {
-            if (ids[i] != -1)
+            if (ids[i] != -1)   // 不是新加的点
             {
                 std::map<int, cv::Point2f>::iterator it;
                 it = prev_un_pts_map.find(ids[i]);
-                if (it != prev_un_pts_map.end())
+                if (it != prev_un_pts_map.end())    // 以前就存在的点
                 {
                     double v_x = (cur_un_pts[i].x - it->second.x) / dt;
                     double v_y = (cur_un_pts[i].y - it->second.y) / dt;
@@ -289,7 +296,7 @@ void FeatureTracker::undistortedPoints()
                 else
                     pts_velocity.push_back(cv::Point2f(0, 0));
             }
-            else
+            else    // 新点的速度置为0
             {
                 pts_velocity.push_back(cv::Point2f(0, 0));
             }
@@ -299,7 +306,7 @@ void FeatureTracker::undistortedPoints()
     {
         for (unsigned int i = 0; i < cur_pts.size(); i++)
         {
-            pts_velocity.push_back(cv::Point2f(0, 0));
+            pts_velocity.push_back(cv::Point2f(0, 0));  // 初始时刻全部点的速度置为0
         }
     }
     prev_un_pts_map = cur_un_pts_map;

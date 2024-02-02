@@ -12,6 +12,11 @@
 #include "factor/integration_base.h"
 
 #include "backend/problem.h"
+#include "backend/vertex_inverse_depth.h"
+#include "backend/vertex_pose.h"
+#include "backend/vertex_speedbias.h"
+#include "backend/edge_reprojection.h"
+#include "backend/edge_imu.h"
 
 #include <unordered_map>
 #include <queue>
@@ -144,4 +149,11 @@ class Estimator
     Vector3d relo_relative_t;
     Quaterniond relo_relative_q;
     double relo_relative_yaw;
+
+    double _lambda_last {0.};
+
+    myslam::backend::Problem _problem;
+    vector<shared_ptr<myslam::backend::VertexPose>> _vertex_pose_vec;
+    vector<shared_ptr<myslam::backend::VertexSpeedBias>> _vertex_motion_vec;
+    int _state_dim {0};
 };

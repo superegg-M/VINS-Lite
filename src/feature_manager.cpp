@@ -8,8 +8,8 @@ int FeaturePerId::endFrame()
 FeatureManager::FeatureManager(Matrix3d _Rs[])
     : Rs(_Rs)
 {
-    for (int i = 0; i < NUM_OF_CAM; i++)
-        ric[i].setIdentity();
+    for (auto & i : ric)
+        i.setIdentity();
 }
 
 void FeatureManager::setRic(Matrix3d _ric[])
@@ -41,17 +41,19 @@ int FeatureManager::getFeatureCount()
     return cnt;
 }
 
-
+// 无论视差是否够, 都为把frame关联到其所观测到的landmark上
+// <int, vector<pair<int, Eigen::Matrix<double, 7, 1>>>: (feature_id, [(camera_id, camera_param), ...])
 bool FeatureManager::addFeatureCheckParallax(int frame_count, const map<int, vector<pair<int, Eigen::Matrix<double, 7, 1>>>> &image, double td)
 {
+    // TODO: 应该把新的frame加入到problem的camera顶点中
     //ROS_DEBUG("input feature: %d", (int)image.size());
     //ROS_DEBUG("num of feature: %d", getFeatureCount());
     double parallax_sum = 0;
     int parallax_num = 0;
     last_track_num = 0;
-    for (auto &id_pts : image)
+    for (auto &id_pts : image)  // 遍历image中的所有landmarks
     {
-        FeaturePerFrame f_per_fra(id_pts.second[0].second, td);
+        FeaturePerFrame f_per_fra(id_pts.second[0].second, td); // 对于所有的landmark, 这个参数应该都是一样的
 
         int feature_id = id_pts.first;
         auto it = find_if(feature.begin(), feature.end(), [feature_id](const FeaturePerId &it)
@@ -59,15 +61,17 @@ bool FeatureManager::addFeatureCheckParallax(int frame_count, const map<int, vec
             return it.feature_id == feature_id;
                           });
 
-        if (it == feature.end())
+        if (it == feature.end())    // 新的landmark, 由于新landmark只有一个关联的frame, 所以其没有edge
         {
-            feature.push_back(FeaturePerId(feature_id, frame_count));
-            feature.back().feature_per_frame.push_back(f_per_fra);
+            feature.emplace_back(feature_id, frame_count);  // 把新的landmark保存在feature列表中
+            feature.back().feature_per_frame.push_back(f_per_fra);  // 把frame保存在新的landmark的帧队列中
+            // TODO: 应该在这里给problem加入landmark顶点
         }
-        else if (it->feature_id == feature_id)
+        else if (it->feature_id == feature_id)  // frame所观测到的landmark已经存在, 则需要把frame加入到landmark对应的edge的vertex中
         {
             it->feature_per_frame.push_back(f_per_fra);
             last_track_num++;
+            // TODO: 应该在这里给problem加入edge
         }
     }
 
@@ -101,7 +105,7 @@ void FeatureManager::debugShow()
     //ROS_DEBUG("debug show");
     for (auto &it : feature)
     {
-        assert(it.feature_per_frame.size() != 0);
+        assert(!it.feature_per_frame.empty());
         assert(it.start_frame >= 0);
         assert(it.used_num >= 0);
 
@@ -132,7 +136,7 @@ vector<pair<Vector3d, Vector3d>> FeatureManager::getCorresponding(int frame_coun
 
             b = it.feature_per_frame[idx_r].point;
             
-            corres.push_back(make_pair(a, b));
+            corres.emplace_back(a, b);
         }
     }
     return corres;
@@ -325,7 +329,7 @@ void FeatureManager::removeBack()
         else
         {
             it->feature_per_frame.erase(it->feature_per_frame.begin());
-            if (it->feature_per_frame.size() == 0)
+            if (it->feature_per_frame.empty())
                 feature.erase(it);
         }
     }
@@ -347,7 +351,7 @@ void FeatureManager::removeFront(int frame_count)
             if (it->endFrame() < frame_count - 1)
                 continue;
             it->feature_per_frame.erase(it->feature_per_frame.begin() + j);
-            if (it->feature_per_frame.size() == 0)
+            if (it->feature_per_frame.empty())
                 feature.erase(it);
         }
     }

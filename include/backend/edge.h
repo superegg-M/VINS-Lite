@@ -38,7 +38,7 @@ public:
      * 设置一个顶点
      * @param vertex 对应的vertex对象
      */
-    bool AddVertex(std::shared_ptr<Vertex> vertex) {
+    bool AddVertex(const std::shared_ptr<Vertex>& vertex) {
         verticies_.emplace_back(vertex);
         return true;
     }
