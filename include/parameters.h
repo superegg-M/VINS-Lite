@@ -8,6 +8,8 @@
 // #include <opencv2/core/eigen.hpp>
 #include <fstream>
 
+#define CAIN_IMU_INTEGRATION
+
 //feature tracker
 // extern int ROW;
 // extern int COL;

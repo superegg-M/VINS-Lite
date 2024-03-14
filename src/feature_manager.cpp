@@ -1,3 +1,5 @@
+#include <iostream>
+
 #include "feature_manager.h"
 
 int FeaturePerId::endFrame()
@@ -85,6 +87,8 @@ bool FeatureManager::addFeatureCheckParallax(int frame_count, const map<int, vec
         {
             parallax_sum += compensatedParallax2(it_per_id, frame_count);
             parallax_num++;
+            // std::cout << "Case 0: frame_count = " << frame_count << ", start_frame = " << it_per_id.start_frame << ", end_frame = " << (it_per_id.start_frame + int(it_per_id.feature_per_frame.size()) - 1) << std::endl;
+
         }
     }
 
@@ -344,6 +348,7 @@ void FeatureManager::removeFront(int frame_count)
         if (it->start_frame == frame_count)
         {
             it->start_frame--;
+            // std::cout << "Case 1: frame_count = " << frame_count << ", start_frame = " << it->start_frame << ", end_frame = " << it->endFrame() << std::endl;
         }
         else
         {
@@ -353,6 +358,7 @@ void FeatureManager::removeFront(int frame_count)
             it->feature_per_frame.erase(it->feature_per_frame.begin() + j);
             if (it->feature_per_frame.empty())
                 feature.erase(it);
+            // std::cout << "Case 2: frame_count = " << frame_count << ", start_frame = " << it->start_frame << ", end_frame = " << it->endFrame() << std::endl;
         }
     }
 }

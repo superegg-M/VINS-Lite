@@ -2,6 +2,8 @@
 
 #include "eigen_types.h"
 #include "../thirdparty/Sophus/sophus/se3.hpp"
+#include "../utility/utility.h"
+#include "../parameters.h"
 
 namespace myslam {
 namespace backend {
@@ -11,159 +13,165 @@ public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW;
 
     /**
-     * constructor, with initial bias a and bias g
-     * @param ba
-     * @param bg
-     */
-    explicit IMUIntegration(const Vec3 &ba, const Vec3 &bg) : ba_(ba), bg_(bg) {
-        const Mat33 i3 = Mat33::Identity();
-        noise_measurement_.block<3, 3>(0, 0) = (acc_noise_ * acc_noise_) * i3;
-        noise_measurement_.block<3, 3>(3, 3) = (gyr_noise_ * gyr_noise_) * i3;
-        noise_random_walk_.block<3, 3>(0, 0) = (acc_random_walk_ * acc_random_walk_) * i3;
-        noise_random_walk_.block<3, 3>(3, 3) = (gyr_random_walk_ * gyr_random_walk_) * i3;
-    }
+        * constructor, with initial bias a and bias g
+        * @param ba
+        * @param bg
+        */
+    explicit IMUIntegration(const Vec3 &acc_init, const Vec3 &gyro_init, const Vec3 &ba, const Vec3 &bg);
 
-    ~IMUIntegration() {}
+    ~IMUIntegration() = default;
+
+    void push_back(double dt, const Vec3 &acc, const Vec3 &gyro);
 
     /**
-     * propage pre-integrated measurements using raw IMU data
-     * @param dt
-     * @param acc
-     * @param gyr_1
-     */
-    void Propagate(double dt, const Vec3 &acc, const Vec3 &gyr);
+        * propage pre-integrated measurements using raw IMU data
+        * @param dt
+        * @param acc
+        * @param gyr_1
+        */
+    void propagate(double dt, const Vec3 &acc, const Vec3 &gyro);
 
     /**
-     * according to pre-integration, when bias is updated, pre-integration should also be updated using
-     * first-order expansion of ba and bg
-     *
-     * @param delta_ba
-     * @param delta_bg
-     */
-    void Correct(const Vec3 &delta_ba, const Vec3 &delta_bg);
+        * according to pre-integration, when bias is updated, pre-integration should also be updated using
+        * first-order expansion of ba and bg
+        *
+        * @param delta_ba
+        * @param delta_bg
+        */
+    void correct(const Vec3 &delta_ba, const Vec3 &delta_bg);
 
-    void SetBiasG(const Vec3 &bg) { bg_ = bg; }
-
-    void SetBiasA(const Vec3 &ba) { ba_ = ba; }
+    void set_gyro_bias(const Vec3 &bg) { _bg = bg; }
+    void set_acc_bias(const Vec3 &ba) { _ba = ba; }
+    static void set_gravity(const Vec3 &gravity) { _gravity = gravity; }
 
     /// if bias is update by a large value, redo the propagation
-    void Repropagate();
+    void repropagate(const Eigen::Vector3d &ba, const Eigen::Vector3d &bg);
 
     /// reset measurements
     /// NOTE ba and bg will not be reset, only measurements and jacobians will be reset!
-    void Reset() {
-        sum_dt_ = 0;
-        delta_r_ = Sophus::SO3d();  // dR
-        delta_v_ = Vec3::Zero();    // dv
-        delta_p_ = Vec3::Zero();    // dp
-
-        // jacobian w.r.t bg and ba
-        dr_dbg_ = Mat33::Zero();
-        dv_dbg_ = Mat33::Zero();
-        dv_dba_ = Mat33::Zero();
-        dp_dbg_ = Mat33::Zero();
-        dp_dba_ = Mat33::Zero();
-
-        // noise propagation
-        covariance_measurement_ = Mat99::Zero();
-        covariance_random_walk_ = Mat66::Zero();
-        A_ = Mat99::Zero();
-        B_ = Mat96::Zero();
-    }
+    void reset();
 
     /**
-     * get the jacobians from r,v,p w.r.t. biases
-     * @param _dr_dbg
-     * @param _dv_dbg
-     * @param _dv_dba
-     * @param _dp_dbg
-     * @param _dp_dba
-     */
-    void GetJacobians(Mat33 &dr_dbg, Mat33 &dv_dbg, Mat33 &dv_dba, Mat33 &dp_dbg, Mat33 &dp_dba) const {
-        dr_dbg = dr_dbg_;
-        dv_dbg = dv_dbg_;
-        dv_dba = dv_dba_;
-        dp_dbg = dp_dbg_;
-        dp_dba = dp_dba_;
+        * get the jacobians from r,v,p w.r.t. biases
+        * @param _dr_dbg
+        * @param _dv_dbg
+        * @param _dv_dba
+        * @param _dp_dbg
+        * @param _dp_dba
+        */
+    void get_jacobians(Mat33 &dr_dbg, Mat33 &dv_dbg, Mat33 &dv_dba, Mat33 &dp_dbg, Mat33 &dp_dba) const {
+        dr_dbg = _dr_dbg;
+        dv_dbg = _dv_dbg;
+        dv_dba = _dv_dba;
+        dp_dbg = _dp_dbg;
+        dp_dba = _dp_dba;
     }
 
-    Mat33 GetDrDbg() const { return dr_dbg_; }
+    const Mat33 &get_dr_dbg() const { return _dr_dbg; }
+    const Mat33 &get_dp_dbg() const { return _dp_dbg; }
+    const Mat33 &get_dp_dba() const { return _dp_dba; }
+    const Mat33 &get_dv_dbg() const { return _dv_dbg; }
+    const Mat33 &get_dv_dba() const { return _dv_dba; }
 
-    /// get propagated noise covariance
-    Mat99 GetCovarianceMeasurement() const {
-        return covariance_measurement_;
-    }
-
-    /// get random walk covariance
-    Mat66 GetCovarianceRandomWalk() const {
-        return noise_random_walk_ * sum_dt_;
-    }
+    const Mat1515 &get_covariance() const { return _covariance; }
 
     /// get sum of time
-    double GetSumDt() const {
-        return sum_dt_;
-    }
+    double get_sum_dt() const { return _sum_dt; }
 
     /**
-     * get the integrated measurements
-     * @param delta_r
-     * @param delta_v
-     * @param delta_p
-     */
-    void GetDeltaRVP(Sophus::SO3d &delta_r, Vec3 &delta_v, Vec3 &delta_p) const {
-        delta_r = delta_r_;
-        delta_v = delta_v_;
-        delta_p = delta_p_;
+        * get the integrated measurements
+        * @param delta_r
+        * @param delta_v
+        * @param delta_p
+        */
+    void get_delta_RVP(Sophus::SO3d &delta_r, Vec3 &delta_v, Vec3 &delta_p) const {
+        delta_r = _delta_r;
+        delta_v = _delta_v;
+        delta_p = _delta_p;
     }
 
-    Vec3 GetDv() const { return delta_v_; }
+    const Vec3 &get_delta_v() const { return _delta_v; }
+    const Vec3 &get_delta_p() const { return _delta_p; }
+    const Sophus::SO3d &get_delta_r() const { return _delta_r; }
+    
+    const Vec3 &get_delta_v_corr() const { return _delta_v_corr; }
+    const Vec3 &get_delta_p_corr() const { return _delta_p_corr; }
+    const Sophus::SO3d &get_delta_r_corr() const { return _delta_r_corr; }
 
-    Vec3 GetDp() const { return delta_p_; }
+    const Vec3 &get_ba() const { return _ba; }
+    const Vec3 &get_bg() const { return _bg; }
+    const Vec3 &get_ba_corr() const { return _ba_corr; }
+    const Vec3 &get_bg_corr() const { return _bg_corr; }
+    static const Vec3 &get_gravity() { return _gravity; }
 
-    Sophus::SO3d GetDr() const { return delta_r_; }
+    const Qd &get_delta_q() const { return _delta_q; }
+
+protected:
+    void calculate_APAT(const Mat33 &delta_r, const Mat33 &delta_r_last, 
+                        const Mat33 &delta_r_a_hat, const Mat33 &delta_r_a_hat_last,
+                        const Mat33 &dr, const Mat33 &jr_dt);    
 
 private:
     // raw data from IMU
-    std::vector<double> dt_buf_;
-    VecVec3 acc_buf_;
-    VecVec3 gyr_buf_;
+    std::vector<double> _dt_buf;
+    VecVec3 _acc_buf;
+    VecVec3 _gyro_buf;
+    Vec3 _acc_init;
+    Vec3 _gyro_init;
+    Vec3 _acc_last;
+    Vec3 _gyro_last;
 
     // pre-integrated IMU measurements
-    double sum_dt_ = 0;
-    Sophus::SO3d delta_r_;  // dR
-    Vec3 delta_v_ = Vec3::Zero();    // dv
-    Vec3 delta_p_ = Vec3::Zero();    // dp
+    double _sum_dt = 0;
+    Sophus::SO3d _delta_r;  // dR
+    Vec3 _delta_v = Vec3::Zero();    // dv
+    Vec3 _delta_p = Vec3::Zero();    // dp
+    Sophus::SO3d _delta_r_corr;  // dR
+    Vec3 _delta_v_corr = Vec3::Zero();    // dv
+    Vec3 _delta_p_corr = Vec3::Zero();    // dp
 
     // gravity, biases
-    static Vec3 gravity_;
-    Vec3 bg_ = Vec3::Zero();    // initial bias of gyro
-    Vec3 ba_ = Vec3::Zero();    // initial bias of accelerator
+    static Vec3 _gravity;
+    Vec3 _bg = Vec3::Zero();    // initial bias of gyro
+    Vec3 _ba = Vec3::Zero();    // initial bias of accelerator
+    Vec3 _bg_corr = Vec3::Zero();    // initial bias of gyro
+    Vec3 _ba_corr = Vec3::Zero();    // initial bias of accelerator
 
     // jacobian w.r.t bg and ba
-    Mat33 dr_dbg_ = Mat33::Zero();
-    Mat33 dv_dbg_ = Mat33::Zero();
-    Mat33 dv_dba_ = Mat33::Zero();
-    Mat33 dp_dbg_ = Mat33::Zero();
-    Mat33 dp_dba_ = Mat33::Zero();
+    Mat33 _dr_dbg = Mat33::Zero();
+    Mat33 _dv_dbg = Mat33::Zero();
+    Mat33 _dv_dba = Mat33::Zero();
+    Mat33 _dp_dbg = Mat33::Zero();
+    Mat33 _dp_dba = Mat33::Zero();
 
     // noise propagation
-    Mat99 covariance_measurement_ = Mat99::Zero();
-    Mat66 covariance_random_walk_ = Mat66::Zero();
-    Mat99 A_ = Mat99::Zero();
-    Mat96 B_ = Mat96::Zero();
+    Mat1515 _covariance = Mat1515::Zero();
+    Mat1515 _A = Mat1515::Identity();   // (p, R, v) <- (p, R, v)
+    Eigen::Matrix<double, 15, 18> _B = Eigen::Matrix<double, 15, 18>::Zero();       // (p, R, v) <- (bg, ba)
+    Eigen::Matrix<double, 18, 1> _N = Eigen::Matrix<double, 18, 1>::Identity();
+
+    Eigen::Matrix<double, 9, 9> _A00 = Eigen::Matrix<double, 9, 9>::Identity();
+    Eigen::Matrix<double, 9, 6> _A01 = Eigen::Matrix<double, 9, 6>::Zero();
+    Eigen::Matrix<double, 9, 12> _B00 = Eigen::Matrix<double, 9, 12>::Zero();
+    Eigen::Matrix<double, 9, 6> _B01 = Eigen::Matrix<double, 9, 6>::Zero();
+
+    double _dt = 0.;
+    Qd _delta_q = Qd::Identity();
+    Mat1515 _jacobian = Mat1515::Identity();
+    Eigen::Matrix<double, 18, 18> _noise;
 
     // raw noise of imu measurement
-    Mat66 noise_measurement_ = Mat66::Identity();
-    Mat66 noise_random_walk_ = Mat66::Identity();
+    Eigen::Matrix<double, 12, 1> _noise_measurement = Eigen::Matrix<double, 12, 1>::Identity();
+    Vec6 _noise_random_walk = Vec6::Identity();
 
     /**@brief accelerometer measurement noise standard deviation*/
-    constexpr static double acc_noise_ = 0.2;
+    constexpr static double _acc_noise = 0.2;
     /**@brief gyroscope measurement noise standard deviation*/
-    constexpr static double gyr_noise_ = 0.02;
+    constexpr static double _gyro_noise = 0.02;
     /**@brief accelerometer bias random walk noise standard deviation*/
-    constexpr static double acc_random_walk_ = 0.0002;
+    constexpr static double _acc_random_walk = 0.0002;
     /**@brief gyroscope bias random walk noise standard deviation*/
-    constexpr static double gyr_random_walk_ = 2.0e-5;
+    constexpr static double _gyro_random_walk = 2.0e-5;
 };
 
 }

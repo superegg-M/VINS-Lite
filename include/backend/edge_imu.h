@@ -7,6 +7,7 @@
 
 #include "eigen_types.h"
 #include "edge.h"
+#include "imu_integration.h"
 #include "../factor/integration_base.h"
 
 namespace myslam {
@@ -19,8 +20,14 @@ class EdgeImu : public Edge {
 public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW;
 
-    explicit EdgeImu(IntegrationBase* _pre_integration):pre_integration_(_pre_integration),
-          Edge(15, 4, std::vector<std::string>{"VertexPose", "VertexSpeedBias", "VertexPose", "VertexSpeedBias"}) {
+    
+#ifdef CAIN_IMU_INTEGRATION
+    explicit EdgeImu(IMUIntegration* _pre_integration) 
+#else
+    explicit EdgeImu(IntegrationBase* _pre_integration) 
+#endif    
+    : Edge(15, 4, std::vector<std::string>{"VertexPose", "VertexSpeedBias", "VertexPose", "VertexSpeedBias"}),
+      pre_integration_(_pre_integration) {
 //        if (pre_integration_) {
 //            pre_integration_->GetJacobians(dr_dbg_, dv_dbg_, dv_dba_, dp_dbg_, dp_dba_);
 //            Mat99 cov_meas = pre_integration_->GetCovarianceMeasurement();
@@ -54,7 +61,12 @@ private:
         O_BA = 9,
         O_BG = 12
     };
+#ifdef CAIN_IMU_INTEGRATION    
+    IMUIntegration* pre_integration_;
+#else
     IntegrationBase* pre_integration_;
+#endif    
+    
     static Vec3 gravity_;
 
     Mat33 dp_dba_ = Mat33::Zero();
@@ -62,6 +74,9 @@ private:
     Mat33 dr_dbg_ = Mat33::Zero();
     Mat33 dv_dba_ = Mat33::Zero();
     Mat33 dv_dbg_ = Mat33::Zero();
+
+    static Eigen::Matrix<double, 4, 4> get_quat_left(const Qd &q);
+    static Eigen::Matrix<double, 4, 4> get_quat_right(const Qd &q);
 };
 
 }

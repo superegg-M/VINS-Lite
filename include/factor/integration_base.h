@@ -185,6 +185,31 @@ class IntegrationBase
         return residuals;
     }
 
+    void correct(const Eigen::Vector3d &delta_ba, const Eigen::Vector3d &delta_bg) {
+        delta_q *= Utility::deltaQ(get_dr_dbg() * delta_bg);
+        delta_q.normalize();
+        delta_p += get_dp_dba() * delta_ba + get_dp_dbg() * delta_bg;
+        delta_v += get_dv_dba() * delta_ba + get_dv_dbg() * delta_bg;
+        linearized_ba += delta_ba;
+        linearized_bg += delta_bg;
+    }
+
+    double get_sum_dt() const { return sum_dt; }
+    const Eigen::Vector3d &get_ba() const { return linearized_ba; }
+    const Eigen::Vector3d &get_bg() const { return linearized_bg; }
+    const Eigen::Vector3d &get_delta_p() const { return delta_p; }
+    const Eigen::Quaterniond &get_delta_q() const { return delta_q; }
+    const Eigen::Vector3d &get_delta_v() const { return delta_v; }
+
+    const Eigen::Matrix3d get_dr_dbg() const { return jacobian.block<3, 3>(O_R, O_BG); }
+    const Eigen::Matrix3d get_dp_dbg() const { return jacobian.block<3, 3>(O_P, O_BG); }
+    const Eigen::Matrix3d get_dp_dba() const { return jacobian.block<3, 3>(O_P, O_BA); }
+    const Eigen::Matrix3d get_dv_dbg() const { return jacobian.block<3, 3>(O_V, O_BG); }
+    const Eigen::Matrix3d get_dv_dba() const { return jacobian.block<3, 3>(O_V, O_BA); }
+
+    const Eigen::Matrix<double, 15, 15> &get_covariance() const { return covariance; }
+    const Eigen::Matrix<double, 15, 15> &get_jacobian() const { return jacobian; }
+
     double dt;
     Eigen::Vector3d acc_0, gyr_0;
     Eigen::Vector3d acc_1, gyr_1;

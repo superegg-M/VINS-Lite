@@ -17,6 +17,7 @@
 #include "backend/vertex_speedbias.h"
 #include "backend/edge_reprojection.h"
 #include "backend/edge_imu.h"
+#include "backend/imu_integration.h"
 
 #include <unordered_map>
 #include <queue>
@@ -95,7 +96,11 @@ class Estimator
     Vector3d back_P0, last_P, last_P0;
     double Headers[(WINDOW_SIZE + 1)];
 
+#ifdef CAIN_IMU_INTEGRATION
+    myslam::backend::IMUIntegration *pre_integrations[(WINDOW_SIZE + 1)];
+#else
     IntegrationBase *pre_integrations[(WINDOW_SIZE + 1)];
+#endif
     Vector3d acc_0, gyr_0;
 
     vector<double> dt_buf[(WINDOW_SIZE + 1)];
@@ -133,7 +138,11 @@ class Estimator
     vector<double *> last_marginalization_parameter_blocks;
 
     map<double, ImageFrame> all_image_frame;
+#ifdef CAIN_IMU_INTEGRATION
+    myslam::backend::IMUIntegration *tmp_pre_integration;
+#else
     IntegrationBase *tmp_pre_integration;
+#endif    
 
     //relocalization variable
     bool relocalization_info;

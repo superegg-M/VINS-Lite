@@ -4,6 +4,7 @@
 #include <map>
 
 #include "../factor/integration_base.h"
+#include "../backend/imu_integration.h"
 #include "../utility/utility.h"
 #include "../feature_manager.h"
 
@@ -22,7 +23,11 @@ public:
     double t;
     Matrix3d R;
     Vector3d T;
+#ifdef CAIN_IMU_INTEGRATION
+    myslam::backend::IMUIntegration *pre_integration;
+#else
     IntegrationBase *pre_integration;
+#endif    
     bool is_key_frame;
 };
 
