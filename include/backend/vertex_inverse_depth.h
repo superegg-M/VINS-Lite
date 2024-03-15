@@ -1,24 +1,20 @@
-#ifndef MYSLAM_BACKEND_INVERSE_DEPTH_H
-#define MYSLAM_BACKEND_INVERSE_DEPTH_H
+//
+// Created by Cain on 2024/1/2.
+//
+
+#ifndef GRAPH_OPTIMIZATION_VERTEX_INVERSE_DEPTH_H
+#define GRAPH_OPTIMIZATION_VERTEX_INVERSE_DEPTH_H
 
 #include "vertex.h"
 
-namespace myslam {
-namespace backend {
+namespace graph_optimization {
+    class VertexInverseDepth : public Vertex {
+    public:
+        EIGEN_MAKE_ALIGNED_OPERATOR_NEW;
+        VertexInverseDepth() : Vertex(1) {}
 
-/**
- * 以逆深度形式存储的顶点
- */
-class VertexInverseDepth : public Vertex {
-public:
-    EIGEN_MAKE_ALIGNED_OPERATOR_NEW;
-
-    VertexInverseDepth() : Vertex(1) {}
-
-    virtual std::string TypeInfo() const { return "VertexInverseDepth"; }
-};
-
-}
+        std::string type_info() const override { return "VertexInverseDepth"; }
+    };
 }
 
-#endif
+#endif //GRAPH_OPTIMIZATION_VERTEX_INVERSE_DEPTH_H

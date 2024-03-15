@@ -1,33 +1,31 @@
+//
+// Created by Cain on 2023/2/20.
+//
+
 #include "backend/vertex.h"
-#include <iostream>
 
-namespace myslam {
-namespace backend {
+namespace graph_optimization {
+    unsigned long Vertex::_global_vertex_id = 0;
 
-unsigned long global_vertex_id = 0;
+    Vertex::Vertex(unsigned long num_dimension, unsigned long local_dimension) {
+        _parameters.resize(num_dimension, 1);
+        _local_dimension = local_dimension ? local_dimension : num_dimension;
+        _id = _global_vertex_id++;
+    }
 
-Vertex::Vertex(int num_dimension, int local_dimension) {
-    parameters_.resize(num_dimension, 1);
-    local_dimension_ = local_dimension > 0 ? local_dimension : num_dimension;
-    id_ = global_vertex_id++;
+    void Vertex::save_parameters() {
+        saved_parameters = true;
+        _parameters_backup = _parameters;
+    }
 
-//    std::cout << "Vertex construct num_dimension: " << num_dimension
-//              << " local_dimension: " << local_dimension << " id_: " << id_ << std::endl;
-}
-
-Vertex::~Vertex() {}
-
-int Vertex::Dimension() const {
-    return parameters_.rows();
-}
-
-int Vertex::LocalDimension() const {
-    return local_dimension_;
-}
-
-void Vertex::Plus(const VecX &delta) {
-    parameters_ += delta;
-}
+    bool Vertex::load_parameters() {
+        if (saved_parameters) {
+            saved_parameters = false;
+            _parameters = _parameters_backup;
+            return true;
+        }
+        return false;
+    }
 
 }
-}
+

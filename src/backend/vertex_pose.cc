@@ -1,22 +1,22 @@
-#include "backend/vertex_pose.h"
+//
+// Created by Cain on 2024/1/2.
+//
+
+#include <iostream>
+#include "utility/utility.h"
 #include "../thirdparty/Sophus/sophus/se3.hpp"
-//#include <iostream>
-namespace myslam {
-namespace backend {
+#include "../../include/parameters.h"
 
-void VertexPose::Plus(const VecX &delta) {
-    VecX &parameters = Parameters();
-    parameters.head<3>() += delta.head<3>();
-    Qd q(parameters[6], parameters[3], parameters[4], parameters[5]);
-    q = q * Sophus::SO3d::exp(Vec3(delta[3], delta[4], delta[5])).unit_quaternion();  // right multiplication with so3
+#include "backend/vertex_pose.h"
+
+void graph_optimization::VertexPose::plus(const VecX &delta) {
+    VecX &params = parameters();
+    params.head<3>() += delta.head<3>();
+    Qd q(params[6], params[3], params[4], params[5]);
+    q = q * Sophus::SO3d::exp(Vec3(delta[3], delta[4], delta[5])).unit_quaternion();  // q = q * dq
     q.normalized();
-    parameters[3] = q.x();
-    parameters[4] = q.y();
-    parameters[5] = q.z();
-    parameters[6] = q.w();
-//    Qd test = Sophus::SO3d::exp(Vec3(0.2, 0.1, 0.1)).unit_quaternion() * Sophus::SO3d::exp(-Vec3(0.2, 0.1, 0.1)).unit_quaternion();
-//    std::cout << test.x()<<" "<< test.y()<<" "<<test.z()<<" "<<test.w() <<std::endl;
-}
-
-}
+    params[3] = q.x();
+    params[4] = q.y();
+    params[5] = q.z();
+    params[6] = q.w();
 }

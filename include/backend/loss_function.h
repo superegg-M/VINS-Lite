@@ -1,33 +1,37 @@
 //
-// Created by gaoxiang19 on 11/10/18.
+// Created by Cain on 2024/1/5.
 //
 
-#ifndef MYSLAM_LOSS_FUNCTION_H
-#define MYSLAM_LOSS_FUNCTION_H
+#ifndef GRAPH_OPTIMIZATION_LOSS_FUNCTION_H
+#define GRAPH_OPTIMIZATION_LOSS_FUNCTION_H
 
 #include "eigen_types.h"
 
-namespace myslam {
-namespace backend {
-
+namespace graph_optimization {
     /**
-     * compute the scaling factor for a error:
-     * The error is e^T Omega e
-     * The output rho is
-     * rho[0]: The actual scaled error value
-     * rho[1]: First derivative of the scaling function
-     * rho[2]: Second derivative of the scaling function
+     * loss function 即鲁棒核函数
+     * loss套在误差之上
+     * 假设某条边的残差为r，信息矩阵为I, 那么平方误差为r^T*I*r，令它的开方为e
+     * 那么loss就是Compute(e)
+     * 在求导时，也必须将loss function放到求导的第一项
      *
      * LossFunction是各核函数的基类，它可以派生出各种Loss
      */
     class LossFunction {
     public:
+        enum class LossFunctionType {
+            TRIVIAL,
+            HUBER,
+            CAUCHY,
+            TUKEY
+        };
+
+    public:
         EIGEN_MAKE_ALIGNED_OPERATOR_NEW;
 
-        virtual ~LossFunction() {}
+        virtual ~LossFunction() = default;
 
-    //    virtual double Compute(double error) const = 0;
-        virtual void Compute(double err2, Eigen::Vector3d& rho) const = 0;
+        virtual Vec3 compute(double error2) const = 0;
     };
 
     /**
@@ -36,15 +40,9 @@ namespace backend {
      *
      * TrivalLoss(e) = e^2
      */
-    class TrivalLoss : public LossFunction {
+    class TrivialLoss : public LossFunction {
     public:
-        virtual void Compute(double err2, Eigen::Vector3d& rho) const override
-        {
-            // TODO:: whether multiply 1/2
-            rho[0] = err2;
-            rho[1] = 1;
-            rho[2] = 0;
-        }
+        Vec3 compute(double error2) const override { return {error2, 1., 0.}; }
     };
 
     /**
@@ -55,41 +53,51 @@ namespace backend {
      */
     class HuberLoss : public LossFunction {
     public:
-        explicit HuberLoss(double delta) : delta_(delta) {}
+        explicit HuberLoss(double delta=1.345) : _delta(delta) {}
 
-        virtual void Compute(double err2, Eigen::Vector3d& rho) const override;
+        ~HuberLoss() override = default;
+
+        Vec3 compute(double error2) const override;
 
     private:
-        double delta_;
+        double _delta;
 
     };
 
-    /*
-     * Cauchy loss
+    /**
+     * Cauchy Loss
      *
+     * Cauchy(e) = c^2 * log(1 + e^2/c^2)
      */
-    class CauchyLoss : public LossFunction
-    {
+    class CauchyLoss : public LossFunction {
     public:
-        explicit CauchyLoss(double delta) : delta_(delta) {}
+        explicit CauchyLoss(double c=2.3849) : _c2(c*c) {}
 
-        virtual void Compute(double err2, Eigen::Vector3d& rho) const override;
+        ~CauchyLoss() override = default;
+
+        Vec3 compute(double error2) const override;
 
     private:
-        double delta_;
+        double _c2;
     };
 
-    class TukeyLoss : public LossFunction
-    {
+    /**
+     * Huber loss
+     *
+     * Tukey(e) = c^2/3 * (1 - (1 - e^2/c^2)^3)     if e <= c
+     * Tukey(e) = c^2/3                             if e > delta
+     */
+    class TukeyLoss : public LossFunction {
     public:
-        explicit TukeyLoss(double delta) : delta_(delta) {}
+        explicit TukeyLoss(double c=4.685) : _c2(c*c) {}
 
-        virtual void Compute(double err2, Eigen::Vector3d& rho) const override;
+        ~TukeyLoss() override = default;
+
+        Vec3 compute(double error2) const override;
 
     private:
-        double delta_;
+        double _c2;
     };
 }
-}
 
-#endif //MYSLAM_LOSS_FUNCTION_H
+#endif //GRAPH_OPTIMIZATION_LOSS_FUNCTION_H

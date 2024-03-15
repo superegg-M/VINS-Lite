@@ -11,10 +11,10 @@
 
 #include "factor/integration_base.h"
 
-#include "backend/problem.h"
+#include "backend/problem_slam.h"
 #include "backend/vertex_inverse_depth.h"
 #include "backend/vertex_pose.h"
-#include "backend/vertex_speedbias.h"
+#include "backend/vertex_motion.h"
 #include "backend/edge_reprojection.h"
 #include "backend/edge_imu.h"
 #include "backend/imu_integration.h"
@@ -97,7 +97,7 @@ class Estimator
     double Headers[(WINDOW_SIZE + 1)];
 
 #ifdef CAIN_IMU_INTEGRATION
-    myslam::backend::IMUIntegration *pre_integrations[(WINDOW_SIZE + 1)];
+    vins::IMUIntegration *pre_integrations[(WINDOW_SIZE + 1)];
 #else
     IntegrationBase *pre_integrations[(WINDOW_SIZE + 1)];
 #endif
@@ -139,7 +139,7 @@ class Estimator
 
     map<double, ImageFrame> all_image_frame;
 #ifdef CAIN_IMU_INTEGRATION
-    myslam::backend::IMUIntegration *tmp_pre_integration;
+    vins::IMUIntegration *tmp_pre_integration;
 #else
     IntegrationBase *tmp_pre_integration;
 #endif    
@@ -161,8 +161,8 @@ class Estimator
 
     double _lambda_last {0.};
 
-    myslam::backend::Problem _problem;
-    vector<shared_ptr<myslam::backend::VertexPose>> _vertex_pose_vec;
-    vector<shared_ptr<myslam::backend::VertexSpeedBias>> _vertex_motion_vec;
+    graph_optimization::ProblemSLAM _problem;
+    vector<shared_ptr<graph_optimization::VertexPose>> _vertex_pose_vec;
+    vector<shared_ptr<graph_optimization::VertexMotion>> _vertex_motion_vec;
     int _state_dim {0};
 };

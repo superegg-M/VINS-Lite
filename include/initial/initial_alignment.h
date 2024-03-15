@@ -24,7 +24,7 @@ public:
     Matrix3d R;
     Vector3d T;
 #ifdef CAIN_IMU_INTEGRATION
-    myslam::backend::IMUIntegration *pre_integration;
+    vins::IMUIntegration *pre_integration;
 #else
     IntegrationBase *pre_integration;
 #endif    

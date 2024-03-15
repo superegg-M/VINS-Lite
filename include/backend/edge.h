@@ -1,144 +1,142 @@
-#ifndef MYSLAM_BACKEND_EDGE_H
-#define MYSLAM_BACKEND_EDGE_H
+//
+// Created by Cain on 2023/2/20.
+//
+
+#ifndef GRAPH_OPTIMIZATION_EDGE_H
+#define GRAPH_OPTIMIZATION_EDGE_H
 
 #include <memory>
 #include <string>
 #include "eigen_types.h"
-#include <eigen3/Eigen/Dense>
 #include "loss_function.h"
 
-namespace myslam {
-namespace backend {
+namespace graph_optimization {
+    class Vertex;
 
-class Vertex;
+    class Edge {
+    public:
+        EIGEN_MAKE_ALIGNED_OPERATOR_NEW;
 
-/**
- * 边负责计算残差，残差是 预测-观测，维度在构造函数中定义
- * 代价函数是 残差*信息*残差，是一个数值，由后端求和后最小化
- */
-class Edge {
-public:
-    EIGEN_MAKE_ALIGNED_OPERATOR_NEW;
+        /**
+         * 构造函数，会自动化配雅可比的空间
+         * @param residual_dimension 残差维度
+         * @param num_verticies 顶点数量
+         * @param verticies_types 顶点类型名称，可以不给，不给的话check中不会检查
+         */
+        explicit Edge(unsigned long residual_dimension, unsigned long num_vertices,
+                      const std::vector<std::string> &vertices_types = std::vector<std::string>(),
+                      unsigned loss_function_type=0);
 
-    /**
-     * 构造函数，会自动化配雅可比的空间
-     * @param residual_dimension 残差维度
-     * @param num_verticies 顶点数量
-     * @param verticies_types 顶点类型名称，可以不给，不给的话check中不会检查
-     */
-    explicit Edge(int residual_dimension, int num_verticies,
-                  const std::vector<std::string> &verticies_types = std::vector<std::string>());
+        virtual ~Edge();
 
-    virtual ~Edge();
+        /// 返回id
+        unsigned long id() const { return _id; }
 
-    /// 返回id
-    unsigned long Id() const { return id_; }
+        /**
+         * 设置一个顶点
+         * @param vertex 对应的vertex对象
+         */
+        bool add_vertex(const std::shared_ptr<Vertex>& vertex) {
+            _vertices.emplace_back(vertex);
+            return true;
+        }
 
-    /**
-     * 设置一个顶点
-     * @param vertex 对应的vertex对象
-     */
-    bool AddVertex(const std::shared_ptr<Vertex>& vertex) {
-        verticies_.emplace_back(vertex);
-        return true;
-    }
+        /**
+         * 设置一些顶点
+         * @param vertices 顶点，按引用顺序排列
+         * @return
+         */
+        bool set_vertices(const std::vector<std::shared_ptr<Vertex>> &vertices) {
+            _vertices = vertices;
+            return true;
+        }
 
-    /**
-     * 设置一些顶点
-     * @param vertices 顶点，按引用顺序排列
-     * @return
-     */
-    bool SetVertex(const std::vector<std::shared_ptr<Vertex>> &vertices) {
-        verticies_ = vertices;
-        return true;
-    }
+        bool set_vertex(const std::shared_ptr<Vertex> &vertex, unsigned long which_vertex) {
+            if (which_vertex < _vertices.size()) {
+                _vertices[which_vertex] = vertex;
+                return true;
+            }
+            return false;
+        }
 
-    /// 返回第i个顶点
-    std::shared_ptr<Vertex> GetVertex(int i) {
-        return verticies_[i];
-    }
+        bool set_loss_function(LossFunction *loss_function) {
+            if (loss_function) {
+                delete _loss_function;
+                _loss_function = loss_function;
+                return true;
+            }
+            return false;
+        }
 
-    /// 返回所有顶点
-    std::vector<std::shared_ptr<Vertex>> Verticies() const {
-        return verticies_;
-    }
+        /// 返回第i个顶点
+        std::shared_ptr<Vertex> get_vertex(unsigned long i) { return _vertices[i]; }
 
-    /// 返回关联顶点个数
-    size_t NumVertices() const { return verticies_.size(); }
+        /// 返回所有顶点
+        const std::vector<std::shared_ptr<Vertex>> &vertices() const { return _vertices; }
 
-    /// 返回边的类型信息，在子类中实现
-    virtual std::string TypeInfo() const = 0;
+        /// 返回关联顶点个数
+        size_t num_vertices() const { return _vertices.size(); }
 
-    /// 计算残差，由子类实现
-    virtual void ComputeResidual() = 0;
+        /// 返回边的类型信息，在子类中实现
+        virtual std::string type_info() const = 0;
 
-    /// 计算雅可比，由子类实现
-    /// 本后端不支持自动求导，需要实现每个子类的雅可比计算方法
-    virtual void ComputeJacobians() = 0;
+        /// 计算残差，由子类实现
+        virtual void compute_residual() = 0;
 
-//    ///计算该edge对Hession矩阵的影响，由子类实现
-//    virtual void ComputeHessionFactor() = 0;
+        /// 计算雅可比，由子类实现
+        virtual void compute_jacobians() = 0;
 
-    /// 计算平方误差，会乘以信息矩阵
-    double Chi2() const;
-    double RobustChi2() const;
+        void compute_chi2();
 
-    /// 返回残差
-    VecX Residual() const { return residual_; }
+        /// 计算平方误差，会乘以信息矩阵
+        double get_chi2() const { return _chi2; }
 
-    /// 返回雅可比
-    std::vector<MatXX> Jacobians() const { return jacobians_; }
+        double get_robust_chi2() const { return _rho[0]; }
 
-    /// 设置信息矩阵
-    void SetInformation(const MatXX &information) {
-        information_ = information;
-        // sqrt information
-        sqrt_information_ = Eigen::LLT<MatXX>(information_).matrixL().transpose();
-    }
+        /// 返回残差
+        const VecX &residual() const { return _residual; }
 
-    /// 返回信息矩阵
-    MatXX Information() const {
-        return information_;
-    }
+        /// 返回雅可比
+        const std::vector<MatXX> &jacobians() const { return _jacobians; }
 
-    MatXX SqrtInformation() const {
-        return sqrt_information_;
-    }
+        /// 设置信息矩阵, information_ = sqrt_Omega = w
+        void set_information(const MatXX &information) { _information = information; }
 
-    void SetLossFunction(LossFunction* ptr){ lossfunction_ = ptr; }
-    LossFunction* GetLossFunction(){ return lossfunction_;}
-    void RobustInfo(double& drho, MatXX& info) const;
+        /// 返回信息矩阵
+        MatXX information() const { return _information; }
 
-    /// 设置观测信息
-    void SetObservation(const VecX &observation) {
-        observation_ = observation;
-    }
+        void robust_information(double &drho, MatXX &info) const;
 
-    /// 返回观测信息
-    VecX Observation() const { return observation_; }
+        /// 设置观测信息
+        void set_observation(const VecX &observation) { _observation = observation; }
 
-    /// 检查边的信息是否全部设置
-    bool CheckValid();
+        /// 返回观测信息
+        VecX observation() const { return _observation; }
 
-    int OrderingId() const { return ordering_id_; }
+        /// 检查边的信息是否全部设置
+        bool check_valid();
 
-    void SetOrderingId(int id) { ordering_id_ = id; };
+//        unsigned long ordering_id() const { return _ordering_id; }
+//
+//        void set_ordering_id(unsigned long id) { _ordering_id = id; };
 
-protected:
-    unsigned long id_;  // edge id
-    int ordering_id_;   //edge id in problem
-    std::vector<std::string> verticies_types_;  // 各顶点类型信息，用于debug
-    std::vector<std::shared_ptr<Vertex>> verticies_; // 该边对应的顶点
-    VecX residual_;                 // 残差
-    std::vector<MatXX> jacobians_;  // 雅可比，每个雅可比维度是 residual x vertex[i]
-    MatXX information_;             // 信息矩阵
-    MatXX sqrt_information_;
-    VecX observation_;              // 观测信息
+    protected:
+        unsigned long _id;  ///< edge id
+//        unsigned long _ordering_id;   ///< edge id in problem
+        std::vector<std::string> _vertices_types;  ///< 各顶点类型信息，用于debug
+        std::vector<std::shared_ptr<Vertex>> _vertices; ///< 该边对应的顶点
+        VecX _residual;                 ///< 残差
+        std::vector<MatXX> _jacobians;  ///< 雅可比，每个顶点对应一个雅可比, 每个雅可比得维度是 residual x vertex.local_dimension
+        double _chi2 {0};               ///< e^2
+        Vec3 _rho;                      ///< rho(e^2), rho'(e^2), rho''(e^2)
+        MatXX _information;             ///< 信息矩阵
+        MatXX _sqrt_information;        ///< 信息矩阵开方
+        VecX _observation;              ///< 观测信息
+        LossFunction *_loss_function;
 
-    LossFunction *lossfunction_;
-};
-
-}
+    private:
+        static unsigned long _global_edge_id;
+    };
 }
 
-#endif
+#endif //GRAPH_OPTIMIZATION_EDGE_H

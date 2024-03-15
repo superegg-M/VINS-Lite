@@ -2,16 +2,15 @@
 
 #include "backend/vertex_inverse_depth.h"
 #include "backend/vertex_pose.h"
-#include "backend/vertex_speedbias.h"
+#include "backend/vertex_motion.h"
 #include "backend/edge_reprojection.h"
 #include "backend/edge_imu.h"
 
 #include <ostream>
 #include <fstream>
 
-using namespace myslam;
 
-Estimator::Estimator() : f_manager{Rs}, _problem(backend::Problem::ProblemType::SLAM_PROBLEM)
+Estimator::Estimator() : f_manager{Rs}, _problem()
 {
     // ROS_INFO("init begins");
 
@@ -114,7 +113,7 @@ void Estimator::processIMU(double dt, const Vector3d &linear_acceleration, const
     if (!pre_integrations[frame_count])
     {
 #ifdef CAIN_IMU_INTEGRATION
-    pre_integrations[frame_count] = new myslam::backend::IMUIntegration{acc_0, gyr_0, Bas[frame_count], Bgs[frame_count]};
+    pre_integrations[frame_count] = new vins::IMUIntegration{acc_0, gyr_0, Bas[frame_count], Bgs[frame_count]};
 #else
     pre_integrations[frame_count] = new IntegrationBase{acc_0, gyr_0, Bas[frame_count], Bgs[frame_count]};
 #endif
@@ -164,7 +163,7 @@ void Estimator::processImage(const map<int, vector<pair<int, Eigen::Matrix<doubl
     imageframe.pre_integration = tmp_pre_integration;
     all_image_frame.insert(make_pair(header, imageframe));
 #ifdef CAIN_IMU_INTEGRATION
-    tmp_pre_integration = new myslam::backend::IMUIntegration{acc_0, gyr_0, Bas[frame_count], Bgs[frame_count]};
+    tmp_pre_integration = new vins::IMUIntegration{acc_0, gyr_0, Bas[frame_count], Bgs[frame_count]};
 #else
     tmp_pre_integration = new IntegrationBase{acc_0, gyr_0, Bas[frame_count], Bgs[frame_count]};
 #endif    
@@ -703,8 +702,8 @@ bool Estimator::failureDetection()
 
 void Estimator::MargOldFrame()
 {
-    backend::LossFunction *lossfunction;
-    lossfunction = new backend::CauchyLoss(1.0);
+    // backend::LossFunction *lossfunction;
+    // lossfunction = new backend::CauchyLoss(1.0);
 
     // step1. 构建 problem
     // backend::Problem problem(backend::Problem::ProblemType::SLAM_PROBLEM);
@@ -816,11 +815,11 @@ void Estimator::MargOldFrame()
         // 已经有 Prior 了
         if (Hprior_.rows() > 0)
         {
-            problem.SetHessianPrior(Hprior_); // 告诉这个 problem
-            problem.SetbPrior(bprior_);
-            problem.SetErrPrior(errprior_);
-            problem.SetJtPrior(Jprior_inv_);
-            problem.ExtendHessiansPriorSize(15); // 但是这个 prior 还是之前的维度，需要扩展下装新的pose
+            problem.set_hessian_prior(Hprior_); // 告诉这个 problem
+            problem.set_b_prior(bprior_);
+            problem.set_err_prior(errprior_);
+            problem.set_Jt_prior(Jprior_inv_);
+            problem.extend_hessians_prior_size(15); // 但是这个 prior 还是之前的维度，需要扩展下装新的pose
         }
         else
         {
@@ -828,19 +827,19 @@ void Estimator::MargOldFrame()
             Hprior_.setZero();
             bprior_ = VecX(pose_dim);
             bprior_.setZero();
-            problem.SetHessianPrior(Hprior_); // 告诉这个 problem
-            problem.SetbPrior(bprior_);
+            problem.set_hessian_prior(Hprior_); // 告诉这个 problem
+            problem.set_b_prior(bprior_);
         }
     }
 
-    std::vector<std::shared_ptr<backend::Vertex>> marg_vertex;
+    std::vector<std::shared_ptr<graph_optimization::Vertex>> marg_vertex;
     marg_vertex.push_back(vertexCams_vec[0]);
     marg_vertex.push_back(vertexVB_vec[0]);
     problem.Marginalize(marg_vertex, pose_dim, _lambda_last);
-    Hprior_ = problem.GetHessianPrior();
-    bprior_ = problem.GetbPrior();
-    errprior_ = problem.GetErrPrior();
-    Jprior_inv_ = problem.GetJtPrior();
+    Hprior_ = problem.get_hessian_prior();
+    bprior_ = problem.get_b_prior();
+    errprior_ = problem.get_rrr_prior();
+    Jprior_inv_ = problem.get_Jt_prior();
 }
 void Estimator::MargNewFrame()
 {
@@ -892,12 +891,12 @@ void Estimator::MargNewFrame()
         // 已经有 Prior 了
         if (Hprior_.rows() > 0)
         {
-            problem.SetHessianPrior(Hprior_); // 告诉这个 problem
-            problem.SetbPrior(bprior_);
-            problem.SetErrPrior(errprior_);
-            problem.SetJtPrior(Jprior_inv_);
+            problem.set_hessian_prior(Hprior_); // 告诉这个 problem
+            problem.set_b_prior(bprior_);
+            problem.set_err_prior(errprior_);
+            problem.set_Jt_prior(Jprior_inv_);
 
-            problem.ExtendHessiansPriorSize(15); // 但是这个 prior 还是之前的维度，需要扩展下装新的pose
+            problem.extend_hessians_prior_size(15); // 但是这个 prior 还是之前的维度，需要扩展下装新的pose
         }
         else
         {
@@ -908,20 +907,20 @@ void Estimator::MargNewFrame()
         }
     }
 
-    std::vector<std::shared_ptr<backend::Vertex>> marg_vertex;
+    std::vector<std::shared_ptr<graph_optimization::Vertex>> marg_vertex;
     // 把窗口倒数第二个帧 marg 掉
     marg_vertex.push_back(vertexCams_vec[WINDOW_SIZE - 1]);
     marg_vertex.push_back(vertexVB_vec[WINDOW_SIZE - 1]);
     problem.Marginalize(marg_vertex, pose_dim, _lambda_last);
-    Hprior_ = problem.GetHessianPrior();
-    bprior_ = problem.GetbPrior();
-    errprior_ = problem.GetErrPrior();
-    Jprior_inv_ = problem.GetJtPrior();
+    Hprior_ = problem.get_hessian_prior();
+    bprior_ = problem.get_b_prior();
+    errprior_ = problem.get_err_prior();
+    Jprior_inv_ = problem.get_Jt_prior();
 }
 void Estimator::problemSolve()
 {
-    backend::LossFunction *lossfunction;
-    lossfunction = new backend::CauchyLoss(1.0);
+    // backend::LossFunction *lossfunction;
+    auto lossfunction = new graph_optimization::CauchyLoss(1.0);
     //    lossfunction = new backend::TukeyLoss(1.0);
 
     // step1. 构建 problem
@@ -930,7 +929,7 @@ void Estimator::problemSolve()
     // vector<shared_ptr<backend::VertexSpeedBias>> vertexVB_vec;
     // int pose_dim = 0;
 
-    _problem = backend::Problem(backend::Problem::ProblemType::SLAM_PROBLEM);
+    _problem = graph_optimization::ProblemSLAM();
     _vertex_pose_vec.clear();
     _vertex_motion_vec.clear();
     _state_dim = 0;
@@ -940,45 +939,45 @@ void Estimator::problemSolve()
     auto &pose_dim = _state_dim;
 
     // 先把 外参数 节点加入图优化，这个节点在以后一直会被用到，所以我们把他放在第一个
-    shared_ptr<backend::VertexPose> vertexExt(new backend::VertexPose());
+    shared_ptr<graph_optimization::VertexPose> vertexExt(new graph_optimization::VertexPose());
     {
         Eigen::VectorXd pose(7);
         pose << para_Ex_Pose[0][0], para_Ex_Pose[0][1], para_Ex_Pose[0][2], para_Ex_Pose[0][3], para_Ex_Pose[0][4], para_Ex_Pose[0][5], para_Ex_Pose[0][6];
-        vertexExt->SetParameters(pose);
+        vertexExt->set_parameters(pose);
 
         if (!ESTIMATE_EXTRINSIC)
         {
             //ROS_DEBUG("fix extinsic param");
             // TODO:: set Hessian prior to zero
-            vertexExt->SetFixed();
+            vertexExt->set_fixed();
         }
         else{
             //ROS_DEBUG("estimate extinsic param");
         }
-        problem.AddVertex(vertexExt);
-        pose_dim += vertexExt->LocalDimension();
+        problem.add_vertex(vertexExt);
+        pose_dim += vertexExt->local_dimension();
     }
 
     // 相机的顶点(pose和motion), WINDOW_SIZE + 1 个
     for (int i = 0; i < WINDOW_SIZE + 1; i++)
     {
-        shared_ptr<backend::VertexPose> vertexCam(new backend::VertexPose());
+        shared_ptr<graph_optimization::VertexPose> vertexCam(new graph_optimization::VertexPose());
         Eigen::VectorXd pose(7);
         pose << para_Pose[i][0], para_Pose[i][1], para_Pose[i][2], para_Pose[i][3], para_Pose[i][4], para_Pose[i][5], para_Pose[i][6];
-        vertexCam->SetParameters(pose);
+        vertexCam->set_parameters(pose);
         vertexCams_vec.push_back(vertexCam);
-        problem.AddVertex(vertexCam);
-        pose_dim += vertexCam->LocalDimension();
+        problem.add_vertex(vertexCam);
+        pose_dim += vertexCam->local_dimension();
 
-        shared_ptr<backend::VertexSpeedBias> vertexVB(new backend::VertexSpeedBias());
+        shared_ptr<graph_optimization::VertexMotion> vertexVB(new graph_optimization::VertexMotion());
         Eigen::VectorXd vb(9);
         vb << para_SpeedBias[i][0], para_SpeedBias[i][1], para_SpeedBias[i][2],
             para_SpeedBias[i][3], para_SpeedBias[i][4], para_SpeedBias[i][5],
             para_SpeedBias[i][6], para_SpeedBias[i][7], para_SpeedBias[i][8];
-        vertexVB->SetParameters(vb);
+        vertexVB->set_parameters(vb);
         vertexVB_vec.push_back(vertexVB);
-        problem.AddVertex(vertexVB);
-        pose_dim += vertexVB->LocalDimension();
+        problem.add_vertex(vertexVB);
+        pose_dim += vertexVB->local_dimension();
     }
 
     // 边: IMU预积分误差, WINDOW_SIZE个
@@ -988,19 +987,19 @@ void Estimator::problemSolve()
         if (pre_integrations[j]->get_sum_dt() > 10.0)     // 间隔太长的不考虑
             continue;
 
-        std::shared_ptr<backend::EdgeImu> imuEdge(new backend::EdgeImu(pre_integrations[j]));
-        std::vector<std::shared_ptr<backend::Vertex>> edge_vertex;
+        std::shared_ptr<graph_optimization::EdgeImu> imuEdge(new graph_optimization::EdgeImu(pre_integrations[j]));
+        std::vector<std::shared_ptr<graph_optimization::Vertex>> edge_vertex;
         edge_vertex.push_back(vertexCams_vec[i]);
         edge_vertex.push_back(vertexVB_vec[i]);
         edge_vertex.push_back(vertexCams_vec[j]);
         edge_vertex.push_back(vertexVB_vec[j]);
-        imuEdge->SetVertex(edge_vertex);
-        problem.AddEdge(imuEdge);
+        imuEdge->set_vertices(edge_vertex);
+        problem.add_edge(imuEdge);
     }
 
     // 边: 重投影误差
     // 重投影误差的边所包含的顶点是会发生变化的, 随着old key frame被marginalize和new key frame被加入WINDOWS中
-    vector<shared_ptr<backend::VertexInverseDepth>> vertexPt_vec;
+    vector<shared_ptr<graph_optimization::VertexInverseDepth>> vertexPt_vec;
     {
         int feature_index = -1;
         // 遍历每一个特征
@@ -1018,11 +1017,11 @@ void Estimator::problemSolve()
             int imu_i = it_per_id.start_frame, imu_j = imu_i - 1;
             Vector3d pts_i = it_per_id.feature_per_frame[0].point;
 
-            shared_ptr<backend::VertexInverseDepth> verterxPoint(new backend::VertexInverseDepth());
+            shared_ptr<graph_optimization::VertexInverseDepth> verterxPoint(new graph_optimization::VertexInverseDepth());
             VecX inv_d(1);
             inv_d << para_Feature[feature_index][0];
-            verterxPoint->SetParameters(inv_d);
-            problem.AddVertex(verterxPoint);
+            verterxPoint->set_parameters(inv_d);
+            problem.add_vertex(verterxPoint);
             vertexPt_vec.push_back(verterxPoint);
 
             // 遍历所有的观测 (landmark所关联的frame)
@@ -1034,18 +1033,18 @@ void Estimator::problemSolve()
 
                 Vector3d pts_j = it_per_frame.point;
 
-                std::shared_ptr<backend::EdgeReprojection> edge(new backend::EdgeReprojection(pts_i, pts_j));
-                std::vector<std::shared_ptr<backend::Vertex>> edge_vertex;
+                std::shared_ptr<graph_optimization::EdgeReprojection> edge(new graph_optimization::EdgeReprojection(pts_i, pts_j));
+                std::vector<std::shared_ptr<graph_optimization::Vertex>> edge_vertex;
                 edge_vertex.push_back(verterxPoint);
                 edge_vertex.push_back(vertexCams_vec[imu_i]);
                 edge_vertex.push_back(vertexCams_vec[imu_j]);
                 edge_vertex.push_back(vertexExt);
 
-                edge->SetVertex(edge_vertex);
-                edge->SetInformation(project_sqrt_info_.transpose() * project_sqrt_info_);
+                edge->set_vertices(edge_vertex);
+                edge->set_information(project_sqrt_info_.transpose() * project_sqrt_info_);
 
-                edge->SetLossFunction(lossfunction);
-                problem.AddEdge(edge);
+                edge->set_loss_function(lossfunction);
+                problem.add_edge(edge);
             }
         }
     }
@@ -1059,16 +1058,16 @@ void Estimator::problemSolve()
             //            Hprior_.block(0,0,6,Hprior_.cols()).setZero();
             //            Hprior_.block(0,0,Hprior_.rows(),6).setZero();
 
-            problem.SetHessianPrior(Hprior_); // 告诉这个 problem
-            problem.SetbPrior(bprior_);
-            problem.SetErrPrior(errprior_);
-            problem.SetJtPrior(Jprior_inv_);
-            problem.ExtendHessiansPriorSize(15); // 但是这个 prior 还是之前的维度，需要扩展下装新的pose
+            problem.set_hessian_prior(Hprior_); // 告诉这个 problem
+            problem.set_b_prior(bprior_);
+            problem.set_err_prior(errprior_);
+            problem.set_Jt_prior(Jprior_inv_);
+            problem.extend_hessians_prior_size(15); // 但是这个 prior 还是之前的维度，需要扩展下装新的pose
         }
     }
 
-    problem.Solve(10);
-    _lambda_last = std::max(problem.getCurrentLambda(), 0.);
+    problem.solve(10);
+    _lambda_last = std::max(problem.get_current_lambda(), 0.);
 
     // update bprior_,  Hprior_ do not need update
     if (Hprior_.rows() > 0)
@@ -1076,8 +1075,8 @@ void Estimator::problemSolve()
         std::cout << "----------- update bprior -------------\n";
         std::cout << "             before: " << bprior_.norm() << std::endl;
         std::cout << "                     " << errprior_.norm() << std::endl;
-        bprior_ = problem.GetbPrior();
-        errprior_ = problem.GetErrPrior();
+        bprior_ = problem.get_b_prior();
+        errprior_ = problem.get_err_prior();
         std::cout << "             after: " << bprior_.norm() << std::endl;
         std::cout << "                    " << errprior_.norm() << std::endl;
     }
@@ -1085,13 +1084,13 @@ void Estimator::problemSolve()
     // update parameter
     for (int i = 0; i < WINDOW_SIZE + 1; i++)
     {
-        VecX p = vertexCams_vec[i]->Parameters();
+        VecX p = vertexCams_vec[i]->get_parameters();
         for (int j = 0; j < 7; ++j)
         {
             para_Pose[i][j] = p[j];
         }
 
-        VecX vb = vertexVB_vec[i]->Parameters();
+        VecX vb = vertexVB_vec[i]->get_parameters();
         for (int j = 0; j < 9; ++j)
         {
             para_SpeedBias[i][j] = vb[j];
@@ -1101,7 +1100,7 @@ void Estimator::problemSolve()
     // 遍历每一个特征
     for (int i = 0; i < vertexPt_vec.size(); ++i)
     {
-        VecX f = vertexPt_vec[i]->Parameters();
+        VecX f = vertexPt_vec[i]->get_parameters();
         para_Feature[i][0] = f[0];
     }
 }
@@ -1210,7 +1209,7 @@ void Estimator::slideWindow()
 
             delete pre_integrations[WINDOW_SIZE];
 #ifdef CAIN_IMU_INTEGRATION
-    pre_integrations[WINDOW_SIZE] = new myslam::backend::IMUIntegration{acc_0, gyr_0, Bas[WINDOW_SIZE], Bgs[WINDOW_SIZE]};
+    pre_integrations[WINDOW_SIZE] = new vins::IMUIntegration{acc_0, gyr_0, Bas[WINDOW_SIZE], Bgs[WINDOW_SIZE]};
 #else
     pre_integrations[WINDOW_SIZE] = new IntegrationBase{acc_0, gyr_0, Bas[WINDOW_SIZE], Bgs[WINDOW_SIZE]};
 #endif            
@@ -1264,7 +1263,7 @@ void Estimator::slideWindow()
 
             delete pre_integrations[WINDOW_SIZE];
 #ifdef CAIN_IMU_INTEGRATION
-    pre_integrations[WINDOW_SIZE] = new myslam::backend::IMUIntegration{acc_0, gyr_0, Bas[WINDOW_SIZE], Bgs[WINDOW_SIZE]};
+    pre_integrations[WINDOW_SIZE] = new vins::IMUIntegration{acc_0, gyr_0, Bas[WINDOW_SIZE], Bgs[WINDOW_SIZE]};
 #else
     pre_integrations[WINDOW_SIZE] = new IntegrationBase{acc_0, gyr_0, Bas[WINDOW_SIZE], Bgs[WINDOW_SIZE]};
 #endif            

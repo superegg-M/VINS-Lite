@@ -1,216 +1,140 @@
-#ifndef MYSLAM_BACKEND_PROBLEM_H
-#define MYSLAM_BACKEND_PROBLEM_H
+//
+// Created by Cain on 2023/12/28.
+//
+
+#ifndef GRAPH_OPTIMIZATION_PROBLEM_H
+#define GRAPH_OPTIMIZATION_PROBLEM_H
 
 #include <unordered_map>
 #include <map>
 #include <memory>
 
+#include "../utility/tic_toc.h"
 #include "eigen_types.h"
-#include "edge.h"
 #include "vertex.h"
+#include "edge.h"
 
-typedef unsigned long ulong;
-
-namespace myslam {
-namespace backend {
-
-typedef unsigned long ulong;
+namespace graph_optimization {
+    class Problem {
+    public:
+        enum class SolverType {
+            STEEPEST_DESCENT,
+            GAUSS_NEWTON,
+            LEVENBERG_MARQUARDT,
+            DOG_LEG
+        };
+        typedef unsigned long ulong;
 //    typedef std::unordered_map<unsigned long, std::shared_ptr<Vertex>> HashVertex;
-typedef std::map<unsigned long, std::shared_ptr<Vertex>> HashVertex;
-typedef std::unordered_map<unsigned long, std::shared_ptr<Edge>> HashEdge;
-typedef std::unordered_multimap<unsigned long, std::shared_ptr<Edge>> HashVertexIdToEdge;
+        typedef std::map<unsigned long, std::shared_ptr<Vertex>> HashVertex;
+        typedef std::unordered_map<unsigned long, std::shared_ptr<Edge>> HashEdge;
+        typedef std::unordered_multimap<unsigned long, std::shared_ptr<Edge>> HashVertexIdToEdge;
 
-class Problem {
-public:
+        EIGEN_MAKE_ALIGNED_OPERATOR_NEW;
 
-    /**
-     * 问题的类型
-     * SLAM问题还是通用的问题
-     *
-     * 如果是SLAM问题那么pose和landmark是区分开的，Hessian以稀疏方式存储
-     * SLAM问题只接受一些特定的Vertex和Edge
-     * 如果是通用问题那么hessian是稠密的，除非用户设定某些vertex为marginalized
-     */
-    enum class ProblemType {
-        SLAM_PROBLEM,
-        GENERIC_PROBLEM
+    public:
+        explicit Problem();
+        virtual ~Problem() = default;
+
+        virtual bool add_vertex(const std::shared_ptr<Vertex>& vertex);
+        virtual bool remove_vertex(const std::shared_ptr<Vertex>& vertex);
+        bool add_edge(const std::shared_ptr<Edge>& edge);
+        bool remove_edge(const std::shared_ptr<Edge>& edge);
+        void extend_prior_hessian_size(ulong dim);
+        bool solve(unsigned long iterations);
+
+    public:
+        std::vector<std::shared_ptr<Edge>> get_connected_edges(const std::shared_ptr<Vertex>& vertex);  ///< 获取某个顶点连接到的边
+        void get_outlier_edges(std::vector<std::shared_ptr<Edge>> &outlier_edges);  ///< 取得在优化中被判断为outlier部分的边，方便前端去除outlier
+        MatXX get_h_prior() const { return _h_prior; }
+        VecX get_b_prior() const { return _b_prior; }
+        double get_chi2() const { return _chi2; }
+
+    public:
+        void set_solver_type(SolverType type) { _solver_type = type; }
+
+        //test compute prior
+        void test_compute_prior();
+
+        void test_marginalize();
+
+    protected:
+        virtual void initialize_ordering();    ///< 设置各顶点的ordering_index
+        virtual bool check_ordering();  ///< 检查ordering是否正确
+        void update_states(const VecX &delta_x);    ///< x_bp = x, x = x + Δx, b_prior_bp = b_prior, b_prior = b_prior - H_prior * Δx
+        void rollback_states(const VecX &delta_x);  ///< x = x_bp, b_prior = b_prior_bp
+        virtual void update_prior(const VecX &delta_x); ///< b_prior_bp = b_prior, b_prior = b_prior - H_prior * Δx; 在update_states()中运行
+        void update_residual(); ///< 计算每条边的残差;      运行顺序必须遵循: update_state -> update_residual
+        void update_jacobian(); ///< 计算每条边的残差;      运行顺序必须遵循: update_residual -> update_jacobian
+        void update_chi2(); ///< 计算综合的chi2;           运行顺序必须遵循: update_residual -> update_chi2
+        void update_hessian();    ///< 计算H, b, J, f;    运行顺序必须遵循: update_jacobian -> update_hessian
+        virtual void add_prior_to_hessian();    ///< H = H + H_prior;   在make_hessian()时会运行
+        void initialize_lambda();   ///< 计算λ;   运行顺序必须遵循: update_hessian -> initialize_lambda
+        virtual VecX multiply_hessian(const VecX &x); ///< 计算: Hx
+        virtual double calculate_hessian_norm_square(const VecX &x);    ///< 计算: x'Hx
+        virtual bool solve_linear_system(VecX &delta_x);    ///< 解: (H+λ)Δx = b
+        bool one_step_steepest_descent(VecX &delta_x);  ///< 计算: h_sd = alpha*g
+        bool one_step_gauss_newton(VecX &delta_x);  ///< 计算: h_gn = (H+λ)/g;   运行顺序必须遵循: update_hessian -> one_step_gauss_newton
+        bool calculate_steepest_descent(VecX &delta_x, unsigned long iterations=10);
+        bool calculate_gauss_newton(VecX &delta_x, unsigned long iterations=10);
+        bool calculate_levenberg_marquardt(VecX &delta_x, unsigned long iterations=10);
+        bool calculate_dog_leg(VecX &delta_x, unsigned long iterations=10);
+
+        /// 计算并更新Prior部分
+        void compute_prior();
+
+        void logout_vector_size();
+
+        void save_hessian_diagonal_elements();
+        void load_hessian_diagonal_elements();
+
+        /// PCG 迭代线性求解器
+        VecX PCG_solver(const MatXX &A, const VecX &b, unsigned long max_iter=0);
+
+    protected:
+        bool _debug = false;
+        SolverType _solver_type {SolverType::DOG_LEG};
+
+        double _t_residual_cost = 0.;
+        double _t_chi2_cost = 0.;
+        double _t_jacobian_cost = 0.;
+        double _t_hessian_cost = 0.;
+        double _t_PCG_solve_cost = 0.;
+
+        ulong _ordering_generic = 0;
+        double _chi2 {0.};
+
+        MatXX _hessian;
+        VecX _b;
+        VecX _hessian_diag;
+        VecX _delta_x;
+        VecX _delta_x_sd;
+        VecX _delta_x_gn;
+        VecX _delta_x_lm;
+        VecX _delta_x_dl;
+
+        MatXX _h_prior;
+        VecX _b_prior;
+        VecX _b_prior_bp;
+        MatXX _jt_prior_inv;
+        VecX _err_prior;
+
+        HashVertex _vertices;   ///< 所有的顶点
+        HashEdge _edges;    ///< 所有的边
+        HashVertexIdToEdge _vertex_to_edge;     ///< pair(顶点id, 与该顶点相连的所有边)
+        HashVertex _vertices_marg;  ///< 需要被边缘化的顶点
+
+        // Gauss-Newton or Levenberg-Marquardt
+        double _ni {2.};                 //控制 lambda 缩放大小
+        VecX _diag_lambda;
+        double _current_lambda {0.};
+        double _lambda_min {1e-6};
+        double _lambda_max {1e6};
+
+        // Dog leg
+        double _delta {100.};
+        double _delta_min {1e-6};
+        double _delta_max {1e6};
     };
-
-    EIGEN_MAKE_ALIGNED_OPERATOR_NEW;
-
-    Problem(ProblemType problemType);
-
-    ~Problem();
-
-    bool AddVertex(const std::shared_ptr<Vertex>& vertex);
-
-    /**
-     * remove a vertex
-     * @param vertex_to_remove
-     */
-    bool RemoveVertex(const std::shared_ptr<Vertex>& vertex);
-
-    bool AddEdge(const std::shared_ptr<Edge>& edge);
-
-    bool RemoveEdge(const std::shared_ptr<Edge>& edge);
-
-    /**
-     * 取得在优化中被判断为outlier部分的边，方便前端去除outlier
-     * @param outlier_edges
-     */
-    void GetOutlierEdges(std::vector<std::shared_ptr<Edge>> &outlier_edges);
-
-    /**
-     * 求解此问题
-     * @param iterations
-     * @return
-     */
-    bool Solve(int iterations = 10);
-
-    /// 边缘化一个frame和以它为host的landmark
-    bool Marginalize(std::shared_ptr<Vertex> frameVertex,
-                     const std::vector<std::shared_ptr<Vertex>> &landmarkVerticies);
-
-    bool Marginalize(const std::shared_ptr<Vertex> frameVertex);
-    bool Marginalize(const std::vector<std::shared_ptr<Vertex> > frameVertex,int pose_dim, double prior_lambda);
-
-    MatXX GetHessianPrior(){ return H_prior_;}
-    VecX GetbPrior(){ return b_prior_;}
-    VecX GetErrPrior(){ return err_prior_;}
-    MatXX GetJtPrior(){ return Jt_prior_inv_;}
-    double getCurrentLambda() const { return currentLambda_; }
-
-    void SetHessianPrior(const MatXX& H){H_prior_ = H;}
-    void SetbPrior(const VecX& b){b_prior_ = b;}
-    void SetErrPrior(const VecX& b){err_prior_ = b;}
-    void SetJtPrior(const MatXX& J){Jt_prior_inv_ = J;}
-
-    void ExtendHessiansPriorSize(int dim);
-
-    //test compute prior
-    void TestComputePrior();
-
-private:
-
-    /// Solve的实现，解通用问题
-    bool SolveGenericProblem(int iterations);
-
-    /// Solve的实现，解SLAM问题
-    bool SolveSLAMProblem(int iterations);
-
-    /// 设置各顶点的ordering_index
-    void SetOrdering();
-
-    /// set ordering for new vertex in slam problem
-    void AddOrderingSLAM(const std::shared_ptr<Vertex>& v);
-
-    /// 构造大H矩阵
-    void MakeHessian();
-
-    /// schur求解SBA
-    void SchurSBA();
-
-    /// 解线性方程
-    bool SolveLinearSystem();
-
-    /// 更新状态变量
-    void UpdateStates();
-
-    void RollbackStates(); // 有时候 update 后残差会变大，需要退回去，重来
-
-    /// 计算并更新Prior部分
-    void ComputePrior();
-
-    /// 判断一个顶点是否为Pose顶点
-    bool IsPoseVertex(std::shared_ptr<Vertex> v);
-
-    /// 判断一个顶点是否为landmark顶点
-    bool IsLandmarkVertex(std::shared_ptr<Vertex> v);
-
-    /// 在新增顶点后，需要调整几个hessian的大小
-    void ResizePoseHessiansWhenAddingPose(const std::shared_ptr<Vertex>& v);
-
-    /// 检查ordering是否正确
-    bool CheckOrdering();
-
-    void LogoutVectorSize();
-
-    /// 获取某个顶点连接到的边
-    std::vector<std::shared_ptr<Edge>> GetConnectedEdges(const std::shared_ptr<Vertex>& vertex);
-
-    /// Levenberg
-    /// 计算LM算法的初始Lambda
-    void ComputeLambdaInitLM();
-
-    /// Hessian 对角线加上或者减去  Lambda
-    void AddLambdatoHessianLM();
-
-    void RemoveLambdaHessianLM();
-
-    /// LM 算法中用于判断 Lambda 在上次迭代中是否可以，以及Lambda怎么缩放
-    bool IsGoodStepInLM();
-
-    /// PCG 迭代线性求解器
-    VecX PCGSolver(const MatXX &A, const VecX &b, int maxIter);
-
-    // MatXX MultiPCGSolver(const MatXX &A, const MatXX &B, int maxIter);
-
-    double currentLambda_;
-    VecX _diag_lambda;
-    double currentChi_;
-    double stopThresholdLM_;    // LM 迭代退出阈值条件
-    double ni_;                 //控制 Lambda 缩放大小
-
-    ProblemType problemType_;
-
-    /// 整个信息矩阵
-    MatXX Hessian_;
-    VecX b_;
-    VecX delta_x_;
-
-    /// 先验部分信息
-    MatXX H_prior_;
-    VecX b_prior_;
-    VecX b_prior_backup_;
-    VecX err_prior_backup_;
-
-    MatXX Jt_prior_inv_;
-    VecX err_prior_;
-
-    /// SBA的Pose部分
-    MatXX H_pp_schur_;
-    VecX b_pp_schur_;
-    // Heesian 的 Landmark 和 pose 部分
-    MatXX H_pp_;
-    VecX b_pp_;
-    MatXX H_ll_;
-    VecX b_ll_;
-
-    /// all vertices
-    HashVertex verticies_;
-
-    /// all edges
-    HashEdge edges_;
-
-    /// 由vertex id查询edge
-    HashVertexIdToEdge vertexToEdge_;
-
-    /// Ordering related
-    ulong ordering_poses_ = 0;
-    ulong ordering_landmarks_ = 0;
-    ulong ordering_generic_ = 0;
-    std::map<unsigned long, std::shared_ptr<Vertex>> idx_pose_vertices_;        // 以ordering排序的pose顶点
-    std::map<unsigned long, std::shared_ptr<Vertex>> idx_landmark_vertices_;    // 以ordering排序的landmark顶点
-
-    // verticies need to marg. <Ordering_id_, Vertex>
-    HashVertex verticies_marg_;
-
-    bool bDebug = false;
-    double t_hessian_cost_ = 0.0;
-    double t_PCGsovle_cost_ = 0.0;
-};
-
-}
 }
 
-#endif
+#endif //GRAPH_OPTIMIZATION_PROBLEM_H
