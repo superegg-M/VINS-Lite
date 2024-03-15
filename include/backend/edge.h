@@ -130,7 +130,6 @@ namespace graph_optimization {
         double _chi2 {0};               ///< e^2
         Vec3 _rho;                      ///< rho(e^2), rho'(e^2), rho''(e^2)
         MatXX _information;             ///< 信息矩阵
-        MatXX _sqrt_information;        ///< 信息矩阵开方
         VecX _observation;              ///< 观测信息
         LossFunction *_loss_function;
 

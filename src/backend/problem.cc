@@ -161,10 +161,8 @@ namespace graph_optimization {
                 MatXX robust_information(edge.second->information().rows(),edge.second->information().cols());
                 edge.second->robust_information(drho, robust_information);
 
-                MatXX JtW = jacobian_i.transpose() * robust_information;
                 for (size_t j = i; j < verticies.size(); ++j) {
                     auto &&v_j = verticies[j];
-
                     if (v_j->is_fixed()) continue;
 
                     auto &&jacobian_j = jacobians[j];
@@ -172,7 +170,7 @@ namespace graph_optimization {
                     ulong dim_j = v_j->local_dimension();
 
                     assert(v_j->ordering_id() != -1);
-                    MatXX hessian = JtW * jacobian_j;   // TODO: 这里能继续优化, 因为J'*W*J也是对称矩阵
+                    MatXX hessian = jacobian_i.transpose() * robust_information * jacobian_j;   // TODO: 这里能继续优化, 因为J'*W*J也是对称矩阵
                     // 所有的信息矩阵叠加起来
                     H.block(index_i, index_j, dim_i, dim_j).noalias() += hessian;
                     if (j != i) {
@@ -180,7 +178,7 @@ namespace graph_optimization {
                         H.block(index_j, index_i, dim_j, dim_i).noalias() += hessian.transpose();
                     }
                 }
-                b.segment(index_i, dim_i).noalias() -= drho * JtW * edge.second->residual();
+                b.segment(index_i, dim_i).noalias() -= drho * jacobian_i.transpose() * edge.second->information() * edge.second->residual();
             }
 
         }

@@ -110,7 +110,7 @@ namespace graph_optimization {
                         break;
                     }
                     // chi2小于最初的chi2一定的倍率
-                    if (current_chi2 < stop_threshold) {
+                    if (new_chi2 < stop_threshold) {
                         is_good_to_stop = true;
                         std::cout << "Good: stop iteration due to (current_chi2 < stop_threshold)." << std::endl;
                         break;
@@ -119,6 +119,7 @@ namespace graph_optimization {
                     current_chi2 = new_chi2;
                     update_jacobian();
                     update_hessian();
+                    delta_x.setZero();
                 } else {
                     is_good_step = false;
                     ++failure_cnt;

@@ -62,8 +62,10 @@ namespace graph_optimization {
                 edge->robust_information(drho, robust_information);
 
                 for (size_t j = i; j < vertices.size(); ++j) {
-                    auto v_j = vertices[j];
-                    auto jacobian_j = jacobians[j];
+                    auto &&v_j = vertices[j];
+                    if (v_j->is_fixed()) continue;
+
+                    auto &&jacobian_j = jacobians[j];
                     ulong index_j = v_j->ordering_id();
                     ulong dim_j = v_j->local_dimension();
 

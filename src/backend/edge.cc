@@ -22,8 +22,6 @@ namespace graph_optimization {
         _information.resize(residual_dimension, residual_dimension);
         _information.setIdentity();
 
-        _sqrt_information = _information;
-
         switch (loss_function_type) {
             case 1:
                 _loss_function = new HuberLoss;
@@ -50,16 +48,16 @@ namespace graph_optimization {
     }
 
     void Edge::robust_information(double &drho, MatXX &info) const {
-        VecX error = _sqrt_information * _residual;
+        VecX w_e = _information * _residual;
 
         MatXX robust_info(_information.rows(), _information.cols());
         robust_info.setIdentity();
-        robust_info *= _rho[1];
+        robust_info *= _rho[1] * _information;
         if(_rho[1] + 2 * _rho[2] * _chi2 > 0.) {
-            robust_info += 2 * _rho[2] * error * error.transpose();
+            robust_info += 2 * _rho[2] * w_e * w_e.transpose();
         }
 
-        info = robust_info * _information;
+        info = robust_info;
         drho = _rho[1];
     }
 

@@ -987,7 +987,7 @@ void Estimator::problemSolve()
         if (pre_integrations[j]->get_sum_dt() > 10.0)     // 间隔太长的不考虑
             continue;
 
-        std::shared_ptr<graph_optimization::EdgeImu> imuEdge(new graph_optimization::EdgeImu(*pre_integrations[j]));
+        std::shared_ptr<graph_optimization::EdgeImu> imuEdge(new graph_optimization::EdgeImu(pre_integrations[j]));
         std::vector<std::shared_ptr<graph_optimization::Vertex>> edge_vertex;
         edge_vertex.push_back(vertexCams_vec[i]);
         edge_vertex.push_back(vertexVB_vec[i]);
