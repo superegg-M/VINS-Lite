@@ -61,6 +61,7 @@ namespace graph_optimization {
                 MatXX robust_information(edge->information().rows(), edge->information().cols());
                 edge->robust_information(drho, robust_information);
 
+                MatXX JtW = jacobian_i.transpose() * robust_information;
                 for (size_t j = i; j < vertices.size(); ++j) {
                     auto &&v_j = vertices[j];
                     if (v_j->is_fixed()) continue;
@@ -69,7 +70,7 @@ namespace graph_optimization {
                     ulong index_j = v_j->ordering_id();
                     ulong dim_j = v_j->local_dimension();
 
-                    MatXX hessian = jacobian_i.transpose() * robust_information * jacobian_j;
+                    MatXX hessian = JtW * jacobian_j;
 
                     assert(hessian.rows() == v_i->local_dimension() && hessian.cols() == v_j->local_dimension());
                     // 所有的信息矩阵叠加起来
