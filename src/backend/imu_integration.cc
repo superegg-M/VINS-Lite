@@ -15,12 +15,10 @@ Vec3 IMUIntegration::_gravity = {0., 0., -G(2)};
 
 IMUIntegration::IMUIntegration(const Vec3 &acc_init, const Vec3 &gyro_init, const Vec3 &ba, const Vec3 &bg) 
 : _acc_init(acc_init), _gyro_init(gyro_init), _acc_last(acc_init), _gyro_last(gyro_init), _ba(ba), _bg(bg) {
-    // _jacobian.setIdentity();
-    // _covariance.setZero();
-    // _sum_dt = 0.;
-    // _delta_p.setZero();
-    // _delta_v.setZero();
-    // _delta_q.setIdentity();
+    // double gyro_var = _gyro_noise * _gyro_noise;
+    // double acc_var = _acc_noise * _acc_noise;
+    // double bg_var = _gyro_random_walk * _gyro_random_walk;
+    // double ba_var = _acc_random_walk * _acc_random_walk;
     double gyro_var = GYR_N * GYR_N;
     double acc_var = ACC_N * ACC_N;
     double bg_var = GYR_W * GYR_W;
@@ -31,21 +29,6 @@ IMUIntegration::IMUIntegration(const Vec3 &acc_init, const Vec3 &gyro_init, cons
                           gyro_var, gyro_var, gyro_var;
     _noise_random_walk << ba_var, ba_var, ba_var,
                           bg_var, bg_var, bg_var;
-
-    _noise = Eigen::Matrix<double, 18, 18>::Zero();
-    _noise.block<3, 3>(0, 0) =  (ACC_N * ACC_N) * Eigen::Matrix3d::Identity();
-    _noise.block<3, 3>(3, 3) =  (GYR_N * GYR_N) * Eigen::Matrix3d::Identity();
-    _noise.block<3, 3>(6, 6) =  (ACC_N * ACC_N) * Eigen::Matrix3d::Identity();
-    _noise.block<3, 3>(9, 9) =  (GYR_N * GYR_N) * Eigen::Matrix3d::Identity();
-    _noise.block<3, 3>(12, 12) =  (ACC_W * ACC_W) * Eigen::Matrix3d::Identity();
-    _noise.block<3, 3>(15, 15) =  (GYR_W * GYR_W) * Eigen::Matrix3d::Identity();
-
-    _N << ACC_N * ACC_N, ACC_N * ACC_N, ACC_N * ACC_N,
-          GYR_N * GYR_N, GYR_N * GYR_N, GYR_N * GYR_N,
-          ACC_N * ACC_N, ACC_N * ACC_N, ACC_N * ACC_N,
-          GYR_N * GYR_N, GYR_N * GYR_N, GYR_N * GYR_N,
-          ACC_W * ACC_W, ACC_W * ACC_W, ACC_W * ACC_W,
-          GYR_W * GYR_W, GYR_W * GYR_W, GYR_W * GYR_W;
 }
 
 void IMUIntegration::push_back(double dt, const Vec3 &acc, const Vec3 &gyro) {
@@ -56,107 +39,6 @@ void IMUIntegration::push_back(double dt, const Vec3 &acc, const Vec3 &gyro) {
 }
 
 void IMUIntegration::propagate(double dt, const Vec3 &acc, const Vec3 &gyro) {
-    // _dt = dt;
-
-    // Vector3d un_acc_0 = _delta_q * (_acc_last - _ba);
-    // Vector3d un_gyr = 0.5 * (_gyro_last + gyro) - _bg;
-    // Quaterniond result_delta_q = _delta_q * Quaterniond(1, un_gyr(0) * _dt / 2, un_gyr(1) * _dt / 2, un_gyr(2) * _dt / 2);
-    // result_delta_q.normalize();
-    // Vector3d un_acc_1 = result_delta_q * (acc - _ba);
-    // Vector3d un_acc = 0.5 * (un_acc_0 + un_acc_1);
-    // Vector3d result_delta_p = _delta_p + _delta_v * _dt + 0.5 * un_acc * _dt * _dt;
-    // Vector3d result_delta_v = _delta_v + un_acc * _dt;      
-
-    // Vector3d w_x = 0.5 * (_gyro_last + gyro) - _bg;
-    // Vector3d a_0_x = _acc_last - _ba;
-    // Vector3d a_1_x = acc - _ba;
-    // Matrix3d R_w_x, R_a_0_x, R_a_1_x;
-
-    // R_w_x<<0, -w_x(2), w_x(1),
-    //     w_x(2), 0, -w_x(0),
-    //     -w_x(1), w_x(0), 0;
-    // R_a_0_x<<0, -a_0_x(2), a_0_x(1),
-    //     a_0_x(2), 0, -a_0_x(0),
-    //     -a_0_x(1), a_0_x(0), 0;
-    // R_a_1_x<<0, -a_1_x(2), a_1_x(1),
-    //     a_1_x(2), 0, -a_1_x(0),
-    //     -a_1_x(1), a_1_x(0), 0;
-
-    // MatrixXd F = MatrixXd::Zero(15, 15);
-    // F.block<3, 3>(0, 0) = Matrix3d::Identity();
-    // F.block<3, 3>(0, 3) = -0.25 * _delta_q.toRotationMatrix() * R_a_0_x * _dt * _dt + 
-    //                         -0.25 * result_delta_q.toRotationMatrix() * R_a_1_x * (Matrix3d::Identity() - R_w_x * _dt) * _dt * _dt;
-    // F.block<3, 3>(0, 6) = MatrixXd::Identity(3,3) * _dt;
-    // F.block<3, 3>(0, 9) = -0.25 * (_delta_q.toRotationMatrix() + result_delta_q.toRotationMatrix()) * _dt * _dt;
-    // F.block<3, 3>(0, 12) = -0.25 * result_delta_q.toRotationMatrix() * R_a_1_x * _dt * _dt * -_dt;
-    // F.block<3, 3>(3, 3) = Matrix3d::Identity() - R_w_x * _dt;
-    // F.block<3, 3>(3, 12) = -1.0 * MatrixXd::Identity(3,3) * _dt;
-    // F.block<3, 3>(6, 3) = -0.5 * _delta_q.toRotationMatrix() * R_a_0_x * _dt + 
-    //                         -0.5 * result_delta_q.toRotationMatrix() * R_a_1_x * (Matrix3d::Identity() - R_w_x * _dt) * _dt;
-    // F.block<3, 3>(6, 6) = Matrix3d::Identity();
-    // F.block<3, 3>(6, 9) = -0.5 * (_delta_q.toRotationMatrix() + result_delta_q.toRotationMatrix()) * _dt;
-    // F.block<3, 3>(6, 12) = -0.5 * result_delta_q.toRotationMatrix() * R_a_1_x * _dt * -_dt;
-    // F.block<3, 3>(9, 9) = Matrix3d::Identity();
-    // F.block<3, 3>(12, 12) = Matrix3d::Identity();
-    // //cout<<"A"<<endl<<A<<endl;
-
-    // MatrixXd V = MatrixXd::Zero(15,18);
-    // V.block<3, 3>(0, 0) =  0.25 * _delta_q.toRotationMatrix() * _dt * _dt;
-    // V.block<3, 3>(0, 3) =  0.25 * -result_delta_q.toRotationMatrix() * R_a_1_x  * _dt * _dt * 0.5 * _dt;
-    // V.block<3, 3>(0, 6) =  0.25 * result_delta_q.toRotationMatrix() * _dt * _dt;
-    // V.block<3, 3>(0, 9) =  V.block<3, 3>(0, 3);
-    // V.block<3, 3>(3, 3) =  0.5 * MatrixXd::Identity(3,3) * _dt;
-    // V.block<3, 3>(3, 9) =  0.5 * MatrixXd::Identity(3,3) * _dt;
-    // V.block<3, 3>(6, 0) =  0.5 * _delta_q.toRotationMatrix() * _dt;
-    // V.block<3, 3>(6, 3) =  0.5 * -result_delta_q.toRotationMatrix() * R_a_1_x  * _dt * 0.5 * _dt;
-    // V.block<3, 3>(6, 6) =  0.5 * result_delta_q.toRotationMatrix() * _dt;
-    // V.block<3, 3>(6, 9) =  V.block<3, 3>(6, 3);
-    // V.block<3, 3>(9, 12) = MatrixXd::Identity(3,3) * _dt;
-    // V.block<3, 3>(12, 15) = MatrixXd::Identity(3,3) * _dt;
-
-    // //step_jacobian = F;
-    // //step_V = V;
-    // _jacobian = F * _jacobian;
-    // _covariance = F * _covariance * F.transpose() + V * _noise * V.transpose();
-
-    // double half_dt = 0.5 * dt;
-    // auto delta_r_last = _delta_q.toRotationMatrix();
-    // auto delta_r = result_delta_q.toRotationMatrix();
-    // auto dr = Quaterniond(1, un_gyr(0) * _dt / 2, un_gyr(1) * _dt / 2, un_gyr(2) * _dt / 2).normalized().toRotationMatrix();
-    // Mat33 jr_dt = Sophus::SO3d::JacobianR(un_gyr * _dt ) * dt;
-    // auto dr_dbg_last = _dr_dbg;
-    // _dr_dbg = dr.transpose() * _dr_dbg - jr_dt;
-
-    // auto delta_r_a_hat_last = delta_r_last * R_a_0_x;
-    // auto delta_r_a_hat = delta_r * R_a_1_x;
-    // auto dv_dba_last = _dv_dba;
-    // auto dv_dbg_last = _dv_dbg;
-    // _dv_dba -= half_dt * (delta_r_last + delta_r);
-    // _dv_dbg -= half_dt * (delta_r_a_hat_last * dr_dbg_last + delta_r_a_hat * _dr_dbg);
-
-    // _dp_dba += half_dt * (dv_dba_last + _dv_dba);
-    // _dp_dbg += half_dt * (dv_dbg_last + _dv_dbg);
-
-    // // std::cout << "1 : " << std::endl;
-    // // std::cout << _dr_dbg << std::endl;
-    // // std::cout << "2 : " << std::endl;
-    // // std::cout << _jacobian.block<3, 3>(3, 12) << std::endl;
-
-    // // _dr_dbg = _jacobian.block<3, 3>(3, 12);
-    // // _dv_dba = _jacobian.block<3, 3>(6, 9);
-    // // _dv_dbg = _jacobian.block<3, 3>(6, 12);
-    // // _dp_dba = _jacobian.block<3, 3>(0, 9);
-    // // _dp_dbg = _jacobian.block<3, 3>(0, 12);
-
-
-    // _delta_p = result_delta_p;
-    // _delta_q = result_delta_q;
-    // _delta_v = result_delta_v;
-    // _sum_dt += dt;
-    // _acc_last = acc;
-    // _gyro_last = gyro;  
-
-
     _dt = dt;
 
     // 去偏移
@@ -168,14 +50,13 @@ void IMUIntegration::propagate(double dt, const Vec3 &acc, const Vec3 &gyro) {
     // 预积分(中值积分)
     Vec3 w_mid = 0.5 * (w_last + w);
     Vec3 d_axis_angle = w_mid * dt;
-    Qd dq = Sophus::SO3d::exp(d_axis_angle).unit_quaternion();
-    auto delta_q_last = _delta_q;
-    _delta_q *= dq;
-    _delta_q.normalize();
-
-    auto delta_r_last = delta_q_last.toRotationMatrix();
-    auto delta_r = _delta_q.toRotationMatrix();
-    auto dr = dq.toRotationMatrix();
+    auto dR = Sophus::SO3d::exp(d_axis_angle);
+    dR.normalize();
+    auto dr = dR.matrix();
+    auto delta_r_last = _delta_r.matrix();
+    _delta_r *= dR;
+    _delta_r.normalize();
+    auto delta_r = _delta_r.matrix();
 
     Vec3 a_mid = 0.5 * (a_last + dr * a);
     Vec3 d_vel = delta_r_last * a_mid * dt;
@@ -205,33 +86,18 @@ void IMUIntegration::propagate(double dt, const Vec3 &acc, const Vec3 &gyro) {
     _dp_dbg += half_dt * (dv_dbg_last + _dv_dbg);
 
     // 噪声迭代
-    // // _A.block<3, 3>(6, 3).noalias() = -half_dt * (delta_r_a_hat_last + delta_r_a_hat * dr.transpose());
-    // // _A.block<3, 3>(6, 9).noalias() = -half_dt * (delta_r_last + delta_r);
-    // // _A.block<3, 3>(6, 12).noalias() = half_dt * delta_r_a_hat * jr_dt;
     // _A00.block<3, 3>(6, 3).noalias() = -half_dt * (delta_r_a_hat_last + delta_r_a_hat * dr.transpose());
     // _A01.block<3, 3>(6, 0).noalias() = -half_dt * (delta_r_last + delta_r);
     // _A01.block<3, 3>(6, 3).noalias() = half_dt * delta_r_a_hat * jr_dt;
 
-    // // _A.block<3, 3>(0, 3).noalias() = half_dt * _A.block<3, 3>(6, 3);
-    // // _A.block<3, 3>(0, 6).noalias() = Mat33::Identity() * dt;
-    // // _A.block<3, 3>(0, 9).noalias() = half_dt * _A.block<3, 3>(6, 9);
-    // // _A.block<3, 3>(0, 12).noalias() = half_dt * _A.block<3, 3>(6, 12);
     // _A00.block<3, 3>(0, 3).noalias() = half_dt * _A00.block<3, 3>(6, 3);
     // _A00.block<3, 3>(0, 6).noalias() = Mat33::Identity() * dt;
     // _A01.block<3, 3>(0, 0).noalias() = half_dt * _A01.block<3, 3>(6, 0);
     // _A01.block<3, 3>(0, 3).noalias() = half_dt * _A01.block<3, 3>(6, 3);
     
-    // // _A.block<3, 3>(3, 3).noalias() = dr.transpose();
-    // // _A.block<3, 3>(3, 12).noalias() = -jr_dt;
     // _A00.block<3, 3>(3, 3).noalias() = dr.transpose();
     // _A01.block<3, 3>(3, 3).noalias() = -jr_dt;
 
-    // // _B.block<3, 3>(6, 0).noalias() = -half_dt * delta_r_last;
-    // // _B.block<3, 3>(6, 3).noalias() = 0.5 * half_dt * delta_r_a_hat * jr_dt;
-    // // _B.block<3, 3>(6, 6).noalias() = -half_dt * delta_r;
-    // // _B.block<3, 3>(6, 9).noalias() = _B.block<3, 3>(6, 3);
-    // // _B.block<3, 3>(6, 12).noalias() = _B.block<3, 3>(6, 6) * dt;
-    // // _B.block<3, 3>(6, 15).noalias() = _B.block<3, 3>(6, 9) * dt;
     // _B00.block<3, 3>(6, 0).noalias() = -half_dt * delta_r_last;
     // _B00.block<3, 3>(6, 3).noalias() = 0.5 * half_dt * delta_r_a_hat * jr_dt;
     // _B00.block<3, 3>(6, 6).noalias() = -half_dt * delta_r;
@@ -239,12 +105,6 @@ void IMUIntegration::propagate(double dt, const Vec3 &acc, const Vec3 &gyro) {
     // _B01.block<3, 3>(6, 0).noalias() = _B00.block<3, 3>(6, 6) * dt;
     // _B01.block<3, 3>(6, 3).noalias() = _B00.block<3, 3>(6, 9) * dt;
 
-    // // _B.block<3, 3>(0, 0).noalias() = half_dt * _B.block<3, 3>(6, 0);
-    // // _B.block<3, 3>(0, 3).noalias() = half_dt * _B.block<3, 3>(6, 3);
-    // // _B.block<3, 3>(0, 6).noalias() = half_dt * _B.block<3, 3>(6, 6);
-    // // _B.block<3, 3>(0, 9).noalias() = half_dt * _B.block<3, 3>(6, 9);
-    // // _B.block<3, 3>(0, 12).noalias() = half_dt * _B.block<3, 3>(6, 12);
-    // // _B.block<3, 3>(0, 15).noalias() = half_dt * _B.block<3, 3>(6, 15);
     // _B00.block<3, 3>(0, 0).noalias() = half_dt * _B00.block<3, 3>(6, 0);
     // _B00.block<3, 3>(0, 3).noalias() = half_dt * _B00.block<3, 3>(6, 3);
     // _B00.block<3, 3>(0, 6).noalias() = half_dt * _B00.block<3, 3>(6, 6);
@@ -252,18 +112,10 @@ void IMUIntegration::propagate(double dt, const Vec3 &acc, const Vec3 &gyro) {
     // _B01.block<3, 3>(0, 0).noalias() = half_dt * _B01.block<3, 3>(6, 0);
     // _B01.block<3, 3>(0, 3).noalias() = half_dt * _B01.block<3, 3>(6, 3);
 
-    // // _B.block<3, 3>(3, 3).noalias() = -0.5 * jr_dt;
-    // // _B.block<3, 3>(3, 9).noalias() = _B.block<3, 3>(3, 3);
-    // // _B.block<3, 3>(3, 15).noalias() = _B.block<3, 3>(3, 9) * dt;
     // _B00.block<3, 3>(3, 3).noalias() = -0.5 * jr_dt;
     // _B00.block<3, 3>(3, 9).noalias() = _B00.block<3, 3>(3, 3);
     // _B01.block<3, 3>(3, 3).noalias() = _B00.block<3, 3>(3, 9) * dt;
 
-    // // _B.block<3, 3>(9, 12).noalias() = Mat33::Identity() * dt;
-
-    // // _B.block<3, 3>(12, 15).noalias() = Mat33::Identity() * dt;
-
-    // // _covariance = _A * _covariance * _A.transpose() + _B * _N.asDiagonal() * _B.transpose();
     // Eigen::Matrix<double, 9, 9> tmp = _A00 * _covariance.block<9, 6>(0, 9) * _A01.transpose();
     // _covariance.block<9, 9>(0, 0) = _A00 * _covariance.block<9, 9>(0, 0) * _A00.transpose()
     //                                 + _A01 * _covariance.block<6, 6>(9, 9) * _A01.transpose()
@@ -278,25 +130,11 @@ void IMUIntegration::propagate(double dt, const Vec3 &acc, const Vec3 &gyro) {
     //     _covariance(i + 9, i + 9) += _noise_random_walk(i) * dt * dt;
     // }
 
-    calculate_APAT(delta_r, delta_r_last, delta_r_a_hat, delta_r_a_hat_last, dr, jr_dt);                                                          
+    calculate_cov(delta_r, delta_r_last, delta_r_a_hat, delta_r_a_hat_last, dr, jr_dt);                                                          
 
     for (unsigned int i = 0; i < 9; ++i) {
         _covariance(i, i) += 1e-6 * dt * dt;
     }
-
-    // Eigen::Matrix<double, 9, 6> AP01 = _A * _covariance.block<9, 6>(0, 9);
-    // Eigen::Matrix<double, 9, 6> BP11 = _B * _covariance.block<6, 6>(9, 9);
-    // Eigen::Matrix<double, 9, 9> AP01BT = AP01 * _B.transpose();
-    // _covariance.block<9, 6>(0, 9).noalias() = AP01 + BP11;
-    // _covariance.block<6, 9>(9, 0).noalias() = _covariance.block<9, 6>(0, 9).transpose();
-    // // BP11 += _B * (0.5 * _noise_measurement).asDiagonal();
-    // _covariance.block<9, 9>(0, 0) = _A * _covariance.block<9, 9>(0, 0) * _A.transpose()
-    //                                 + BP11 * _B.transpose() + (AP01BT + AP01BT.transpose())
-    //                                 + _B  * (0.5 * _noise_measurement).asDiagonal() * _B.transpose();
-    // for (unsigned int i = 0; i < 6; ++i) {
-    //     unsigned int j = i + 9;
-    //     _covariance(j, j) += (_noise_random_walk(i) * dt * dt);
-    // }
 
     // 记录上一时刻数据
     _acc_last = acc;
@@ -307,16 +145,6 @@ void IMUIntegration::repropagate(const Eigen::Vector3d &ba, const Eigen::Vector3
     _ba = ba;
     _bg = bg;
     reset();
-    // _sum_dt = 0.0;
-    // _acc_last = _acc_init;
-    // _gyro_last = _gyro_init;
-    // _delta_p.setZero();
-    // _delta_q.setIdentity();
-    // _delta_v.setZero();
-    // _ba = ba;
-    // _bg = bg;
-    // _jacobian.setIdentity();
-    // _covariance.setZero();
     for (size_t i = 0; i < _dt_buf.size(); ++i) {
         propagate(_dt_buf[i], _acc_buf[i], _gyro_buf[i]);
     }
@@ -324,26 +152,18 @@ void IMUIntegration::repropagate(const Eigen::Vector3d &ba, const Eigen::Vector3
 
 void IMUIntegration::correct(const Vec3 &delta_ba, const Vec3 &delta_bg) {
     _delta_r *= Sophus::SO3d::exp(get_dr_dbg() * delta_bg);
-    
-    _delta_q *= Utility::deltaQ(get_dr_dbg() * delta_bg);
-    _delta_q.normalize();
+    _delta_r.normalize();
     _delta_p += get_dp_dba() * delta_ba + get_dp_dbg() * delta_bg;
     _delta_v += get_dv_dba() * delta_ba + get_dv_dbg() * delta_bg;
     _ba += delta_ba;
     _bg += delta_bg;
-
-    // _delta_p_corr = _delta_p + _dp_dba * delta_ba + _dp_dbg * delta_bg;
-    // _delta_r_corr = _delta_r * Sophus::SO3d::exp(_dr_dbg * delta_bg);
-    // _delta_v_corr = _delta_v + _dv_dba * delta_ba + _dv_dbg * delta_bg;
-    // _ba_corr = _ba + delta_ba;
-    // _bg_corr = _bg + delta_bg;
 }
 
 void IMUIntegration::reset() {
     _acc_last = _acc_init;
     _gyro_last = _gyro_init;
 
-    _sum_dt = 0;
+    _sum_dt = 0.;
     _delta_r = Sophus::SO3d();  // dR
     _delta_v.setZero();    // dv
     _delta_p.setZero();    // dp
@@ -357,16 +177,11 @@ void IMUIntegration::reset() {
 
     // noise propagation
     _covariance.setZero();
-    _A.setIdentity();
-    _B.setZero();
-
-    _jacobian.setIdentity();
-    _delta_q.setIdentity();
 }
 
-void IMUIntegration::calculate_APAT(const Mat33 &delta_r, const Mat33 &delta_r_last, 
-                                    const Mat33 &delta_r_a_hat, const Mat33 &delta_r_a_hat_last,
-                                    const Mat33 &dr, const Mat33 &jr_dt) {
+void IMUIntegration::calculate_cov(const Mat33 &delta_r, const Mat33 &delta_r_last, 
+                                   const Mat33 &delta_r_a_hat, const Mat33 &delta_r_a_hat_last,
+                                   const Mat33 &dr, const Mat33 &jr_dt) {
     double delta_r00 = delta_r(0, 0), delta_r01 = delta_r(0, 1), delta_r02 = delta_r(0, 2);   
     double delta_r10 = delta_r(1, 0), delta_r11 = delta_r(1, 1), delta_r12 = delta_r(1, 2);       
     double delta_r20 = delta_r(2, 0), delta_r21 = delta_r(2, 1), delta_r22 = delta_r(2, 2);          
@@ -393,9 +208,7 @@ void IMUIntegration::calculate_APAT(const Mat33 &delta_r, const Mat33 &delta_r_l
     double na_w = _noise_random_walk(0);
     double ng_w = _noise_random_walk(3);
 
-    // Equations for covariance matrix prediction, without process noise!
     static double var[836];
-    // Equations  or covariance matrix prediction, without process noise!
     var[0] = _covariance(6,6)*_dt;
     var[1] = delta_r01 + delta_r_last01;
     var[2] = pow(_dt, 2);

@@ -92,24 +92,17 @@ public:
 
     const Vec3 &get_delta_v() const { return _delta_v; }
     const Vec3 &get_delta_p() const { return _delta_p; }
+    const Qd &get_delta_q() const { return _delta_r.unit_quaternion(); }
     const Sophus::SO3d &get_delta_r() const { return _delta_r; }
-    
-    const Vec3 &get_delta_v_corr() const { return _delta_v_corr; }
-    const Vec3 &get_delta_p_corr() const { return _delta_p_corr; }
-    const Sophus::SO3d &get_delta_r_corr() const { return _delta_r_corr; }
 
     const Vec3 &get_ba() const { return _ba; }
     const Vec3 &get_bg() const { return _bg; }
-    const Vec3 &get_ba_corr() const { return _ba_corr; }
-    const Vec3 &get_bg_corr() const { return _bg_corr; }
     static const Vec3 &get_gravity() { return _gravity; }
 
-    const Qd &get_delta_q() const { return _delta_q; }
-
 protected:
-    void calculate_APAT(const Mat33 &delta_r, const Mat33 &delta_r_last, 
-                        const Mat33 &delta_r_a_hat, const Mat33 &delta_r_a_hat_last,
-                        const Mat33 &dr, const Mat33 &jr_dt);    
+    void calculate_cov(const Mat33 &delta_r, const Mat33 &delta_r_last, 
+                       const Mat33 &delta_r_a_hat, const Mat33 &delta_r_a_hat_last,
+                       const Mat33 &dr, const Mat33 &jr_dt);    
 
 private:
     // raw data from IMU
@@ -126,17 +119,12 @@ private:
     Sophus::SO3d _delta_r;  // dR
     Vec3 _delta_v = Vec3::Zero();    // dv
     Vec3 _delta_p = Vec3::Zero();    // dp
-    Sophus::SO3d _delta_r_corr;  // dR
-    Vec3 _delta_v_corr = Vec3::Zero();    // dv
-    Vec3 _delta_p_corr = Vec3::Zero();    // dp
 
     // gravity, biases
     static Vec3 _gravity;
-    Vec3 _bg = Vec3::Zero();    // initial bias of gyro
-    Vec3 _ba = Vec3::Zero();    // initial bias of accelerator
-    Vec3 _bg_corr = Vec3::Zero();    // initial bias of gyro
-    Vec3 _ba_corr = Vec3::Zero();    // initial bias of accelerator
-
+    Vec3 _ba;   
+    Vec3 _bg;  
+    
     // jacobian w.r.t bg and ba
     Mat33 _dr_dbg = Mat33::Zero();
     Mat33 _dv_dbg = Mat33::Zero();
@@ -146,19 +134,12 @@ private:
 
     // noise propagation
     Mat1515 _covariance = Mat1515::Zero();
-    Mat1515 _A = Mat1515::Identity();   // (p, R, v) <- (p, R, v)
-    Eigen::Matrix<double, 15, 18> _B = Eigen::Matrix<double, 15, 18>::Zero();       // (p, R, v) <- (bg, ba)
-    Eigen::Matrix<double, 18, 1> _N = Eigen::Matrix<double, 18, 1>::Identity();
-
     Eigen::Matrix<double, 9, 9> _A00 = Eigen::Matrix<double, 9, 9>::Identity();
     Eigen::Matrix<double, 9, 6> _A01 = Eigen::Matrix<double, 9, 6>::Zero();
     Eigen::Matrix<double, 9, 12> _B00 = Eigen::Matrix<double, 9, 12>::Zero();
     Eigen::Matrix<double, 9, 6> _B01 = Eigen::Matrix<double, 9, 6>::Zero();
 
     double _dt = 0.;
-    Qd _delta_q = Qd::Identity();
-    Mat1515 _jacobian = Mat1515::Identity();
-    Eigen::Matrix<double, 18, 18> _noise;
 
     // raw noise of imu measurement
     Eigen::Matrix<double, 12, 1> _noise_measurement = Eigen::Matrix<double, 12, 1>::Identity();
