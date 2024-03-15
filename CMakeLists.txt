@@ -60,6 +60,11 @@ ADD_LIBRARY(MyVio SHARED
     src/backend/vertex.cc
     src/backend/edge.cc
     src/backend/problem.cc
+    src/backend/steepest_descent.cc
+    src/backend/gauss_newton.cc
+    src/backend/levenberg_marquardt.cc
+    src/backend/dog_leg.cc
+    src/backend/problem_slam.cc
     src/backend/vertex_pose.cc
     src/backend/edge_reprojection.cc
     src/backend/edge_imu.cc

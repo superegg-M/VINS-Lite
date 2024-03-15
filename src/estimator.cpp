@@ -815,11 +815,11 @@ void Estimator::MargOldFrame()
         // 已经有 Prior 了
         if (Hprior_.rows() > 0)
         {
-            problem.set_hessian_prior(Hprior_); // 告诉这个 problem
+            problem.set_h_prior(Hprior_); // 告诉这个 problem
             problem.set_b_prior(bprior_);
-            problem.set_err_prior(errprior_);
-            problem.set_Jt_prior(Jprior_inv_);
-            problem.extend_hessians_prior_size(15); // 但是这个 prior 还是之前的维度，需要扩展下装新的pose
+            // problem.set_err_prior(errprior_);
+            // problem.set_Jt_prior(Jprior_inv_);
+            problem.extend_prior_hessian_size(15); // 但是这个 prior 还是之前的维度，需要扩展下装新的pose
         }
         else
         {
@@ -827,7 +827,7 @@ void Estimator::MargOldFrame()
             Hprior_.setZero();
             bprior_ = VecX(pose_dim);
             bprior_.setZero();
-            problem.set_hessian_prior(Hprior_); // 告诉这个 problem
+            problem.set_h_prior(Hprior_); // 告诉这个 problem
             problem.set_b_prior(bprior_);
         }
     }
@@ -835,11 +835,11 @@ void Estimator::MargOldFrame()
     std::vector<std::shared_ptr<graph_optimization::Vertex>> marg_vertex;
     marg_vertex.push_back(vertexCams_vec[0]);
     marg_vertex.push_back(vertexVB_vec[0]);
-    problem.Marginalize(marg_vertex, pose_dim, _lambda_last);
-    Hprior_ = problem.get_hessian_prior();
+    problem.marginalize(vertexCams_vec[0], vertexVB_vec[0]);
+    Hprior_ = problem.get_h_prior();
     bprior_ = problem.get_b_prior();
-    errprior_ = problem.get_rrr_prior();
-    Jprior_inv_ = problem.get_Jt_prior();
+    // errprior_ = problem.get_err_prior();
+    // Jprior_inv_ = problem.get_Jt_prior();
 }
 void Estimator::MargNewFrame()
 {
@@ -891,12 +891,12 @@ void Estimator::MargNewFrame()
         // 已经有 Prior 了
         if (Hprior_.rows() > 0)
         {
-            problem.set_hessian_prior(Hprior_); // 告诉这个 problem
+            problem.set_h_prior(Hprior_); // 告诉这个 problem
             problem.set_b_prior(bprior_);
-            problem.set_err_prior(errprior_);
-            problem.set_Jt_prior(Jprior_inv_);
+            // problem.set_err_prior(errprior_);
+            // problem.set_Jt_prior(Jprior_inv_);
 
-            problem.extend_hessians_prior_size(15); // 但是这个 prior 还是之前的维度，需要扩展下装新的pose
+            problem.extend_prior_hessian_size(15); // 但是这个 prior 还是之前的维度，需要扩展下装新的pose
         }
         else
         {
@@ -911,16 +911,16 @@ void Estimator::MargNewFrame()
     // 把窗口倒数第二个帧 marg 掉
     marg_vertex.push_back(vertexCams_vec[WINDOW_SIZE - 1]);
     marg_vertex.push_back(vertexVB_vec[WINDOW_SIZE - 1]);
-    problem.Marginalize(marg_vertex, pose_dim, _lambda_last);
-    Hprior_ = problem.get_hessian_prior();
+    problem.marginalize(vertexCams_vec[WINDOW_SIZE - 1], vertexVB_vec[WINDOW_SIZE - 1]);
+    Hprior_ = problem.get_h_prior();
     bprior_ = problem.get_b_prior();
-    errprior_ = problem.get_err_prior();
-    Jprior_inv_ = problem.get_Jt_prior();
+    // errprior_ = problem.get_err_prior();
+    // Jprior_inv_ = problem.get_Jt_prior();
 }
 void Estimator::problemSolve()
 {
     // backend::LossFunction *lossfunction;
-    auto lossfunction = new graph_optimization::CauchyLoss(1.0);
+    // auto lossfunction = new graph_optimization::CauchyLoss(1.0);
     //    lossfunction = new backend::TukeyLoss(1.0);
 
     // step1. 构建 problem
@@ -987,7 +987,7 @@ void Estimator::problemSolve()
         if (pre_integrations[j]->get_sum_dt() > 10.0)     // 间隔太长的不考虑
             continue;
 
-        std::shared_ptr<graph_optimization::EdgeImu> imuEdge(new graph_optimization::EdgeImu(pre_integrations[j]));
+        std::shared_ptr<graph_optimization::EdgeImu> imuEdge(new graph_optimization::EdgeImu(*pre_integrations[j]));
         std::vector<std::shared_ptr<graph_optimization::Vertex>> edge_vertex;
         edge_vertex.push_back(vertexCams_vec[i]);
         edge_vertex.push_back(vertexVB_vec[i]);
@@ -1043,7 +1043,7 @@ void Estimator::problemSolve()
                 edge->set_vertices(edge_vertex);
                 edge->set_information(project_sqrt_info_.transpose() * project_sqrt_info_);
 
-                edge->set_loss_function(lossfunction);
+                // edge->set_loss_function(lossfunction);
                 problem.add_edge(edge);
             }
         }
@@ -1058,16 +1058,16 @@ void Estimator::problemSolve()
             //            Hprior_.block(0,0,6,Hprior_.cols()).setZero();
             //            Hprior_.block(0,0,Hprior_.rows(),6).setZero();
 
-            problem.set_hessian_prior(Hprior_); // 告诉这个 problem
+            problem.set_h_prior(Hprior_); // 告诉这个 problem
             problem.set_b_prior(bprior_);
-            problem.set_err_prior(errprior_);
-            problem.set_Jt_prior(Jprior_inv_);
-            problem.extend_hessians_prior_size(15); // 但是这个 prior 还是之前的维度，需要扩展下装新的pose
+            // problem.set_err_prior(errprior_);
+            // problem.set_Jt_prior(Jprior_inv_);
+            problem.extend_prior_hessian_size(15); // 但是这个 prior 还是之前的维度，需要扩展下装新的pose
         }
     }
 
     problem.solve(10);
-    _lambda_last = std::max(problem.get_current_lambda(), 0.);
+    // _lambda_last = std::max(problem.get_current_lambda(), 0.);
 
     // update bprior_,  Hprior_ do not need update
     if (Hprior_.rows() > 0)
@@ -1076,7 +1076,7 @@ void Estimator::problemSolve()
         std::cout << "             before: " << bprior_.norm() << std::endl;
         std::cout << "                     " << errprior_.norm() << std::endl;
         bprior_ = problem.get_b_prior();
-        errprior_ = problem.get_err_prior();
+        // errprior_ = problem.get_err_prior();
         std::cout << "             after: " << bprior_.norm() << std::endl;
         std::cout << "                    " << errprior_.norm() << std::endl;
     }

@@ -24,19 +24,21 @@ void graph_optimization::EdgeReprojection::compute_residual() {
     Vec3 t_j = params_j.head<3>();
     Qd q_j = {params_j[6], params_j[3], params_j[4], params_j[5]};
 
+    const auto &param_ext = _vertices[3]->get_parameters();
+    Qd qic(param_ext[6], param_ext[3], param_ext[4], param_ext[5]);
+    Vec3 tic = param_ext.head<3>();
+
     Vec3 p_camera_i = _pt_i / inv_depth_i;
-    Vec3 p_imu_i = _qic * p_camera_i + _tic;
+    Vec3 p_imu_i = qic * p_camera_i + tic;
     Vec3 p_world = q_i * p_imu_i + t_i;
     Vec3 p_imu_j = q_j.inverse() * (p_world - t_j);
-    Vec3 p_camera_j = _qic.inverse() * (p_imu_j - _tic);
+    Vec3 p_camera_j = qic.inverse() * (p_imu_j - tic);
 
     double inv_depth_j = 1. / p_camera_j.z();
     _residual = (p_camera_j * inv_depth_j).head<2>() - _pt_j.head<2>();
 }
 
 void graph_optimization::EdgeReprojection::compute_jacobians() {
-    Mat33 R_ic = _qic.toRotationMatrix();
-
     double inv_depth_i = _vertices[0]->get_parameters()[0];
 
     const auto &params_i = _vertices[1]->get_parameters();
@@ -49,11 +51,16 @@ void graph_optimization::EdgeReprojection::compute_jacobians() {
     Qd q_j = {params_j[6], params_j[3], params_j[4], params_j[5]};
     Mat33 R_j = q_j.toRotationMatrix();
 
+    const auto &param_ext = _vertices[3]->get_parameters();
+    Qd qic(param_ext[6], param_ext[3], param_ext[4], param_ext[5]);
+    Vec3 tic = param_ext.head<3>();
+    Mat33 R_ic = qic.toRotationMatrix();
+
     Vec3 p_camera_i = _pt_i / inv_depth_i;
-    Vec3 p_imu_i = R_ic * p_camera_i + _tic;
+    Vec3 p_imu_i = R_ic * p_camera_i + tic;
     Vec3 p_world = R_i * p_imu_i + t_i;
     Vec3 p_imu_j = R_j.transpose() * (p_world - t_j);
-    Vec3 p_camera_j = R_ic.transpose() * (p_imu_j - _tic);
+    Vec3 p_camera_j = R_ic.transpose() * (p_imu_j - tic);
 
     double inv_depth_j = 1. / p_camera_j.z();
 
@@ -75,12 +82,23 @@ void graph_optimization::EdgeReprojection::compute_jacobians() {
     Eigen::Matrix<double, 2, 6> jacobian_pose_j;
     jacobian_pose_j = dr_dpcj * dpcj_dposj;
 
+    
+    Eigen::Matrix<double, 3, 6> dpcj_dpos_ex;
+    dpcj_dpos_ex.leftCols<3>() = R_ic.transpose() * (R_j.transpose() * R_i - Eigen::Matrix3d::Identity());
+    Eigen::Matrix3d tmp_r = R_ic.transpose() * R_j.transpose() * R_i * R_ic;
+    dpcj_dpos_ex.rightCols<3>() = Sophus::SO3d::hat(tmp_r * p_camera_i) - tmp_r * Sophus::SO3d::hat(p_camera_i) +
+                                  Sophus::SO3d::hat(R_ic.transpose() * (R_j.transpose() * (R_i * tic + p_imu_i - p_imu_j) - tic));
+
+    Eigen::Matrix<double, 2, 6> jacobian_pose_ex;
+    jacobian_pose_ex.leftCols<6>() = dr_dpcj * dpcj_dpos_ex;
+
     Eigen::Matrix<double, 2, 1> jacobian_inv_depth_i;
     jacobian_inv_depth_i = dr_dpcj * R_ic.transpose() * R_j.transpose() * R_i * R_ic * p_camera_i / (-inv_depth_i);
 
     _jacobians[0] = jacobian_inv_depth_i;
     _jacobians[1] = jacobian_pose_i;
     _jacobians[2] = jacobian_pose_j;
+    _jacobians[3] = jacobian_pose_ex;
 }
 
 void graph_optimization::EdgeReprojectionPoint3d::compute_residual() {

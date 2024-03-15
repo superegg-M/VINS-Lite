@@ -51,6 +51,8 @@ namespace graph_optimization {
 
     public:
         void set_solver_type(SolverType type) { _solver_type = type; }
+        void set_h_prior(const MatXX &h_prior) { _h_prior = h_prior; }
+        void set_b_prior(const VecX &b_prior) { _b_prior = b_prior; }
 
         //test compute prior
         void test_compute_prior();
@@ -92,7 +94,7 @@ namespace graph_optimization {
 
     protected:
         bool _debug = false;
-        SolverType _solver_type {SolverType::DOG_LEG};
+        SolverType _solver_type {SolverType::LEVENBERG_MARQUARDT};
 
         double _t_residual_cost = 0.;
         double _t_chi2_cost = 0.;

@@ -241,7 +241,6 @@ namespace graph_optimization {
         MatXX Hlp = _hessian.block(reserve_size, 0, marg_size, reserve_size);
 //        VecX bpp = _b.segment(0, reserve_size);
         VecX bll = _b.segment(reserve_size, marg_size);
-
         MatXX temp_H(MatXX::Zero(marg_size, reserve_size));  // Hll^-1 * Hpl^T
         VecX temp_b(VecX::Zero(marg_size, 1));   // Hll^-1 * bl
         for (const auto& landmark_vertex : _idx_landmark_vertices) {
@@ -273,7 +272,7 @@ namespace graph_optimization {
         VecX delta_x_pp(VecX::Zero(reserve_size));
 #ifdef USE_PCG_SOLVER
         auto n_pcg = _h_pp_schur.rows() * 2;                       // 迭代次数
-    delta_x_pp = PCG_solver(_h_pp_schur, _b_pp_schur, n_pcg);
+        delta_x_pp = PCG_solver(_h_pp_schur, _b_pp_schur, n_pcg);
 #else
         auto &&H_pp_schur_ldlt = _h_pp_schur.ldlt();
         if (H_pp_schur_ldlt.info() != Eigen::Success) {
@@ -281,12 +280,12 @@ namespace graph_optimization {
         }
         delta_x_pp =  H_pp_schur_ldlt.solve(_b_pp_schur);
 #endif
-        _delta_x.head(reserve_size) = delta_x_pp;
+        delta_x.head(reserve_size) = delta_x_pp;
 
         // Hll * dxl = bl - Hlp * dxp
         VecX delta_x_ll(marg_size);
         delta_x_ll = temp_b - temp_H * delta_x_pp;
-        _delta_x.tail(marg_size) = delta_x_ll;
+        delta_x.tail(marg_size) = delta_x_ll;
 
         return true;
     }

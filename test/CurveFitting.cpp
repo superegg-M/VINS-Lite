@@ -1,8 +1,10 @@
 #include <iostream>
 #include <random>
 #include "backend/problem.h"
+#include "backend/vertex.h"
+#include "backend/edge.h"
 
-using namespace myslam::backend;
+using namespace graph_optimization;
 using namespace std;
 
 // 曲线模型的顶点，模板参数：优化变量维度和数据类型
@@ -12,7 +14,7 @@ public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
     CurveFittingVertex(): Vertex(3) {}  // abc: 三个参数， Vertex 是 3 维的
-    virtual std::string TypeInfo() const { return "abc"; }
+    std::string type_info() const override { return "abc"; }
 };
 
 // 误差模型 模板参数：观测值维度，类型，连接顶点类型
@@ -25,24 +27,24 @@ public:
         y_ = y;
     }
     // 计算曲线模型误差
-    virtual void ComputeResidual() override
+    void compute_residual() override
     {
-        Vec3 abc = verticies_[0]->Parameters();  // 估计的参数
-        residual_(0) = std::exp( abc(0)*x_*x_ + abc(1)*x_ + abc(2) ) - y_;  // 构建残差
+        Vec3 abc = _vertices[0]->get_parameters();  // 估计的参数
+        _residual(0) = std::exp( abc(0)*x_*x_ + abc(1)*x_ + abc(2) ) - y_;  // 构建残差
     }
 
     // 计算残差对变量的雅克比
-    virtual void ComputeJacobians() override
+    void compute_jacobians() override
     {
-        Vec3 abc = verticies_[0]->Parameters();
+        Vec3 abc = _vertices[0]->get_parameters();
         double exp_y = std::exp( abc(0)*x_*x_ + abc(1)*x_ + abc(2) );
 
         Eigen::Matrix<double, 1, 3> jaco_abc;  // 误差为1维，状态量 3 个，所以是 1x3 的雅克比矩阵
         jaco_abc << x_ * x_ * exp_y, x_ * exp_y , 1 * exp_y;
-        jacobians_[0] = jaco_abc;
+        _jacobians[0] = jaco_abc;
     }
     /// 返回边的类型信息
-    virtual std::string TypeInfo() const override { return "CurveFittingEdge"; }
+    virtual std::string type_info() const override { return "CurveFittingEdge"; }
 public:
     double x_,y_;  // x 值， y 值为 _measurement
 };
@@ -57,13 +59,13 @@ int main()
     std::normal_distribution<double> noise(0.,w_sigma);
 
     // 构建 problem
-    Problem problem(Problem::ProblemType::GENERIC_PROBLEM);
+    Problem problem;
     shared_ptr< CurveFittingVertex > vertex(new CurveFittingVertex());
 
     // 设定待估计参数 a, b, c初始值
-    vertex->SetParameters(Eigen::Vector3d (0.,0.,0.));
+    vertex->set_parameters(Eigen::Vector3d (0.,0.,0.));
     // 将待估计的参数加入最小二乘问题
-    problem.AddVertex(vertex);
+    problem.add_vertex(vertex);
 
     // 构造 N 次观测
     for (int i = 0; i < N; ++i) {
@@ -78,18 +80,18 @@ int main()
         shared_ptr< CurveFittingEdge > edge(new CurveFittingEdge(x,y));
         std::vector<std::shared_ptr<Vertex>> edge_vertex;
         edge_vertex.push_back(vertex);
-        edge->SetVertex(edge_vertex);
+        edge->set_vertices(edge_vertex);
 
         // 把这个残差添加到最小二乘问题
-        problem.AddEdge(edge);
+        problem.add_edge(edge);
     }
 
     std::cout<<"\nTest CurveFitting start..."<<std::endl;
     /// 使用 LM 求解
-    problem.Solve(30);
+    problem.solve(30);
 
     std::cout << "-------After optimization, we got these parameters :" << std::endl;
-    std::cout << vertex->Parameters().transpose() << std::endl;
+    std::cout << vertex->get_parameters().transpose() << std::endl;
     std::cout << "-------ground truth: " << std::endl;
     std::cout << "1.0,  2.0,  1.0" << std::endl;
 
