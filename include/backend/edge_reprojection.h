@@ -14,7 +14,7 @@ namespace graph_optimization {
     public:
         EIGEN_MAKE_ALIGNED_OPERATOR_NEW;
         explicit EdgeReprojection(Vec3 pt_i, Vec3 pt_j)
-        : Edge(2, 4, std::vector<std::string>{"VertexInverseDepth", "VertexPose", "VertexPose", "VertexPose"}, 3),
+        : Edge(2, 4, std::vector<std::string>{"VertexInverseDepth", "VertexPose", "VertexPose", "VertexPose"}, 2),
         _pt_i(std::move(pt_i)), _pt_j(std::move(pt_j)) {}
 
         /// 返回边的类型信息
