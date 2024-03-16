@@ -104,7 +104,7 @@ namespace graph_optimization {
                         break;
                     }
                     // chi2的变化率小于1e-6
-                    if (fabs(new_chi2 - current_chi2) < 1e-4 * current_chi2) {
+                    if (fabs(new_chi2 - current_chi2) < 1e-3 * current_chi2) {
                         is_good_to_stop = true;
                         std::cout << "Good: stop iteration due to (fabs(new_chi2 - current_chi2) < 1e-3 * current_chi2)." << std::endl;
                         break;
