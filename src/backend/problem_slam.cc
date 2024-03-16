@@ -60,7 +60,6 @@ namespace graph_optimization {
                 double drho;
                 MatXX robust_information(edge->information().rows(), edge->information().cols());
                 edge->robust_information(drho, robust_information);
-
                 MatXX JtW = jacobian_i.transpose() * robust_information;
                 for (size_t j = i; j < vertices.size(); ++j) {
                     auto &&v_j = vertices[j];
@@ -104,9 +103,9 @@ namespace graph_optimization {
                     temp_H.row(idx) = Hsl.col(idx) / Hll(idx, idx);
                     temp_b(idx) = bll(idx) / Hll(idx, idx);
                 } else {
-                    auto Hmm_LUP = Hll.block(idx, idx, size, size).fullPivLu();
-                    temp_H.block(idx, 0, size, state_dim) = Hmm_LUP.solve(Hsl.block(0, idx, state_dim, size).transpose());
-                    temp_b.segment(idx, size) = Hmm_LUP.solve(bll.segment(idx, size));
+                    auto Hmm_ldlt = Hll.block(idx, idx, size, size).ldlt();
+                    temp_H.block(idx, 0, size, state_dim) = Hmm_ldlt.solve(Hsl.block(0, idx, state_dim, size).transpose());
+                    temp_b.segment(idx, size) = Hmm_ldlt.solve(bll.segment(idx, size));
                 }
             }
 
@@ -130,19 +129,19 @@ namespace graph_optimization {
 
             // 将 row i 移动矩阵最下面
             Eigen::MatrixXd temp_rows = h_state_schur.block(idx, 0, dim, state_dim);
-            Eigen::MatrixXd temp_botRows = h_state_schur.block(idx + dim, 0, state_dim - idx - dim, state_dim);
-            h_state_schur.block(idx, 0, state_dim - idx - dim, state_dim) = temp_botRows;
+            Eigen::MatrixXd temp_bot_rows = h_state_schur.block(idx + dim, 0, state_dim - idx - dim, state_dim);
+            h_state_schur.block(idx, 0, state_dim - idx - dim, state_dim) = temp_bot_rows;
             h_state_schur.block(state_dim - dim, 0, dim, state_dim) = temp_rows;
 
             // 将 col i 移动矩阵最右边
             Eigen::MatrixXd temp_cols = h_state_schur.block(0, idx, state_dim, dim);
-            Eigen::MatrixXd temp_rightCols = h_state_schur.block(0, idx + dim, state_dim, state_dim - idx - dim);
-            h_state_schur.block(0, idx, state_dim, state_dim - idx - dim) = temp_rightCols;
+            Eigen::MatrixXd temp_right_cols = h_state_schur.block(0, idx + dim, state_dim, state_dim - idx - dim);
+            h_state_schur.block(0, idx, state_dim, state_dim - idx - dim) = temp_right_cols;
             h_state_schur.block(0, state_dim - dim, state_dim, dim) = temp_cols;
 
             Eigen::VectorXd temp_b = b_state_schur.segment(idx, dim);
-            Eigen::VectorXd temp_btail = b_state_schur.segment(idx + dim, state_dim - idx - dim);
-            b_state_schur.segment(idx, state_dim - idx - dim) = temp_btail;
+            Eigen::VectorXd temp_b_tail = b_state_schur.segment(idx + dim, state_dim - idx - dim);
+            b_state_schur.segment(idx, state_dim - idx - dim) = temp_b_tail;
             b_state_schur.segment(state_dim - dim, dim) = temp_b;
         };
         if (vertex_motion) {
@@ -168,9 +167,9 @@ namespace graph_optimization {
                 temp_H = Hrm.transpose() / Hmm(0, 0);
                 temp_b = bmm / Hmm(0, 0);
             } else {
-                auto Hmm_LUP = Hmm.fullPivLu();
-                temp_H = Hmm_LUP.solve(Hrm.transpose());
-                temp_b = Hmm_LUP.solve(bmm);
+                auto Hmm_ldlt = Hmm.ldlt();
+                temp_H = Hmm_ldlt.solve(Hrm.transpose());
+                temp_b = Hmm_ldlt.solve(bmm);
             }
 
             // (Hrr - Hrm * Hmm^-1 * Hmr) * dxp = br - Hrm * Hmm^-1 * bm
