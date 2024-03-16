@@ -70,7 +70,7 @@ void graph_optimization::EdgeReprojection::compute_jacobians() {
 
     Eigen::Matrix<double, 3, 6> dpcj_dposi;
     dpcj_dposi.leftCols<3>() = R_ic.transpose() * R_j.transpose();
-    dpcj_dposi.rightCols<3>() = dpcj_dposi.leftCols<3>() * R_i * Sophus::SO3d::hat(p_imu_i);
+    dpcj_dposi.rightCols<3>() = -dpcj_dposi.leftCols<3>() * R_i * Sophus::SO3d::hat(p_imu_i);
 
     Eigen::Matrix<double, 2, 6> jacobian_pose_i;
     jacobian_pose_i = dr_dpcj * dpcj_dposi;
@@ -85,7 +85,7 @@ void graph_optimization::EdgeReprojection::compute_jacobians() {
     
     Eigen::Matrix<double, 3, 6> dpcj_dpos_ex;
     dpcj_dpos_ex.leftCols<3>() = R_ic.transpose() * (R_j.transpose() * R_i - Eigen::Matrix3d::Identity());
-    Eigen::Matrix3d tmp_r = R_ic.transpose() * R_j.transpose() * R_i * R_ic;
+    Eigen::Matrix3d tmp_r = dpcj_dposi.leftCols<3>() * R_i * R_ic;
     dpcj_dpos_ex.rightCols<3>() = Sophus::SO3d::hat(tmp_r * p_camera_i) - tmp_r * Sophus::SO3d::hat(p_camera_i) +
                                   Sophus::SO3d::hat(R_ic.transpose() * (R_j.transpose() * (R_i * tic + p_imu_i - p_imu_j) - tic));
 
@@ -93,7 +93,7 @@ void graph_optimization::EdgeReprojection::compute_jacobians() {
     jacobian_pose_ex.leftCols<6>() = dr_dpcj * dpcj_dpos_ex;
 
     Eigen::Matrix<double, 2, 1> jacobian_inv_depth_i;
-    jacobian_inv_depth_i = dr_dpcj * R_ic.transpose() * R_j.transpose() * R_i * R_ic * p_camera_i / (-inv_depth_i);
+    jacobian_inv_depth_i = dr_dpcj * tmp_r * p_camera_i / (-inv_depth_i);
 
     _jacobians[0] = jacobian_inv_depth_i;
     _jacobians[1] = jacobian_pose_i;
