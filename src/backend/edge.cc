@@ -24,13 +24,13 @@ namespace graph_optimization {
 
         switch (loss_function_type) {
             case 1:
-                _loss_function = new HuberLoss;
+                _loss_function = new HuberLoss(1.);
                 break;
             case 2:
-                _loss_function = new CauchyLoss;
+                _loss_function = new CauchyLoss(1.);
                 break;
             case 3:
-                _loss_function = new TukeyLoss;
+                _loss_function = new TukeyLoss(2.);
                 break;
             default:
                 _loss_function = new TrivialLoss;
