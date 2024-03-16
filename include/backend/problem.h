@@ -21,7 +21,8 @@ namespace graph_optimization {
             STEEPEST_DESCENT,
             GAUSS_NEWTON,
             LEVENBERG_MARQUARDT,
-            DOG_LEG
+            DOG_LEG,
+            TMP
         };
         typedef unsigned long ulong;
 //    typedef std::unordered_map<unsigned long, std::shared_ptr<Vertex>> HashVertex;
@@ -92,9 +93,11 @@ namespace graph_optimization {
         /// PCG 迭代线性求解器
         VecX PCG_solver(const MatXX &A, const VecX &b, unsigned long max_iter=0);
 
+        bool Solve(unsigned long iterations=10);
+
     protected:
         bool _debug = false;
-        SolverType _solver_type {SolverType::LEVENBERG_MARQUARDT};
+        SolverType _solver_type {SolverType::DOG_LEG};
 
         double _t_residual_cost = 0.;
         double _t_chi2_cost = 0.;

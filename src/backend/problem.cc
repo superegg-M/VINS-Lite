@@ -104,7 +104,8 @@ namespace graph_optimization {
                 flag = calculate_dog_leg(_delta_x_dl, iterations);
                 break;
             default:
-                flag = calculate_levenberg_marquardt(_delta_x_lm, iterations);
+                // flag = calculate_levenberg_marquardt(_delta_x_lm, iterations);
+                flag = Solve(iterations);
                 break;
         }
 
