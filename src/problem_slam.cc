@@ -55,14 +55,14 @@ namespace graph_optimization {
                     double drho;
                     MatXX robust_information(edge->information().rows(), edge->information().cols());
                     edge->robust_information(drho, robust_information);
-
+                    MatXX jt_rw = jacobian_i.transpose() * robust_information;
                     for (size_t j = i; j < vertices.size(); ++j) {
                         auto v_j = vertices[j];
                         auto jacobian_j = jacobians[j];
                         ulong index_j = v_j->ordering_id();
                         ulong dim_j = v_j->local_dimension();
 
-                        MatXX hessian = jacobian_i.transpose() * robust_information * jacobian_j;
+                        MatXX hessian = jt_rw * jacobian_j;
 
                         assert(hessian.rows() == v_i->local_dimension() && hessian.cols() == v_j->local_dimension());
                         // 所有的信息矩阵叠加起来
@@ -96,9 +96,9 @@ namespace graph_optimization {
                         temp_H.row(idx) = Hsl.col(idx) / Hll(idx, idx);
                         temp_b(idx) = bll(idx) / Hll(idx, idx);
                     } else {
-                        auto Hmm_LUP = Hll.block(idx, idx, size, size).fullPivLu();
-                        temp_H.block(idx, 0, size, state_dim) = Hmm_LUP.solve(Hsl.block(0, idx, state_dim, size).transpose());
-                        temp_b.segment(idx, size) = Hmm_LUP.solve(bll.segment(idx, size));
+                        auto Hmm_ldlt = Hll.block(idx, idx, size, size).ldlt();
+                        temp_H.block(idx, 0, size, state_dim) = Hmm_ldlt.solve(Hsl.block(0, idx, state_dim, size).transpose());
+                        temp_b.segment(idx, size) = Hmm_ldlt.solve(bll.segment(idx, size));
                     }
                 }
 
@@ -128,13 +128,13 @@ namespace graph_optimization {
 
                 // 将 col i 移动矩阵最右边
                 Eigen::MatrixXd temp_cols = h_state_schur.block(0, idx, state_dim, dim);
-                Eigen::MatrixXd temp_rightCols = h_state_schur.block(0, idx + dim, state_dim, state_dim - idx - dim);
-                h_state_schur.block(0, idx, state_dim, state_dim - idx - dim) = temp_rightCols;
+                Eigen::MatrixXd temp_right_cols = h_state_schur.block(0, idx + dim, state_dim, state_dim - idx - dim);
+                h_state_schur.block(0, idx, state_dim, state_dim - idx - dim) = temp_right_cols;
                 h_state_schur.block(0, state_dim - dim, state_dim, dim) = temp_cols;
 
                 Eigen::VectorXd temp_b = b_state_schur.segment(idx, dim);
-                Eigen::VectorXd temp_btail = b_state_schur.segment(idx + dim, state_dim - idx - dim);
-                b_state_schur.segment(idx, state_dim - idx - dim) = temp_btail;
+                Eigen::VectorXd temp_b_tail = b_state_schur.segment(idx + dim, state_dim - idx - dim);
+                b_state_schur.segment(idx, state_dim - idx - dim) = temp_b_tail;
                 b_state_schur.segment(state_dim - dim, dim) = temp_b;
             };
             if (vertex_motion) {
@@ -160,9 +160,9 @@ namespace graph_optimization {
                     temp_H = Hrm.transpose() / Hmm(0, 0);
                     temp_b = bmm / Hmm(0, 0);
                 } else {
-                    auto Hmm_LUP = Hmm.fullPivLu();
-                    temp_H = Hmm_LUP.solve(Hrm.transpose());
-                    temp_b = Hmm_LUP.solve(bmm);
+                    auto Hmm_ldlt = Hmm.ldlt();
+                    temp_H = Hmm_ldlt.solve(Hrm.transpose());
+                    temp_b = Hmm_ldlt.solve(bmm);
                 }
 
                 // (Hrr - Hrm * Hmm^-1 * Hmr) * dxp = br - Hrm * Hmm^-1 * bm
@@ -176,7 +176,7 @@ namespace graph_optimization {
                 marginalize_bottom_vertex(vertex_motion);
             }
 
-            _h_prior = h_state_schur;
+            _h_prior = 0.5 * (h_state_schur + h_state_schur.transpose());
             _b_prior = b_state_schur;
 
             // 移除顶点
@@ -287,6 +287,7 @@ namespace graph_optimization {
         }
 
         void ProblemSLAM::add_prior_to_hessian() {
+            std::cout << "add_prior_to_hessian()";
             if(_h_prior.rows() > 0) {
                 MatXX H_prior_tmp = _h_prior;
                 VecX b_prior_tmp = _b_prior;
