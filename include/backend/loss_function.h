@@ -19,7 +19,7 @@ namespace graph_optimization {
      */
     class LossFunction {
     public:
-        enum class LossFunctionType {
+        enum class Type {
             TRIVIAL,
             HUBER,
             CAUCHY,
