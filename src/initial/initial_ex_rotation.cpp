@@ -53,7 +53,7 @@ bool InitialEXRotation::CalibrationExRotation(vector<pair<Vector3d, Vector3d>> c
     Quaterniond estimated_R(x);
     ric = estimated_R.toRotationMatrix().inverse();
     //cout << svd.singularValues().transpose() << endl;
-    //cout << ric << endl;
+    //cout << _r_ic << endl;
     Vector3d ric_cov;
     ric_cov = svd.singularValues().tail<3>();
     if (frame_count >= WINDOW_SIZE && ric_cov(1) > 0.25)

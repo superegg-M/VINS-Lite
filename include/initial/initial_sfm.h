@@ -16,7 +16,7 @@ using namespace std;
 struct SFMFeature
 {
     bool state;
-    int id;
+    unsigned int id;
     vector<pair<int,Vector2d>> observation;
     double position[3];
     double depth;

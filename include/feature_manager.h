@@ -16,88 +16,96 @@ using namespace Eigen;
 
 #include "parameters.h"
 
-class FeaturePerFrame
-{
+class FeaturePerFrame {
 public:
-  FeaturePerFrame(const Eigen::Matrix<double, 7, 1> &_point, double td)
-  {
-    point.x() = _point(0);
-    point.y() = _point(1);
-    point.z() = _point(2);
-    uv.x() = _point(3);
-    uv.y() = _point(4);
-    velocity.x() = _point(5);
-    velocity.y() = _point(6);
-    cur_td = td;
-  }
-  double cur_td;
-  Vector3d point;
-  Vector2d uv;
-  Vector2d velocity;
-  double z;
-  bool is_used;
-  double parallax;
-  MatrixXd A;
-  VectorXd b;
-  double dep_gradient;
+    FeaturePerFrame(const Eigen::Matrix<double, 7, 1> &data, double td) {
+        point.x() = data(0);
+        point.y() = data(1);
+        point.z() = data(2);
+        uv.x() = data(3);
+        uv.y() = data(4);
+        velocity.x() = data(5);
+        velocity.y() = data(6);
+        cur_td = td;
+    }
+    double cur_td;
+    Vector3d point;
+    Vector2d uv;
+    Vector2d velocity;
+    double z{};
+    bool is_used{};
+    double parallax{};
+    MatrixXd A;
+    VectorXd b;
+    double dep_gradient{};
 };
 
-class FeaturePerId
-{
+class FeaturePerId {
 public:
-  const int feature_id;
-  int start_frame;
-  vector<FeaturePerFrame> feature_per_frame;
+    const unsigned int feature_id;
+    unsigned int start_frame_id;
+    vector<FeaturePerFrame> feature_per_frame;
 
-  int used_num;
-  bool is_outlier;
-  bool is_margin;
-  double estimated_depth;
-  int solve_flag; // 0 haven't solve yet; 1 solve succ; 2 solve fail;
+    bool is_outlier {false};
+    bool is_margin {false};
+    double estimated_depth {-1.};
+    int solve_flag {0}; // 0 haven't solve yet; 1 solve succ; 2 solve fail;
 
-  Vector3d gt_p;
+    Vector3d gt_p;
 
-  FeaturePerId(int _feature_id, int _start_frame)
-      : feature_id(_feature_id), start_frame(_start_frame),
-        used_num(0), estimated_depth(-1.0), solve_flag(0)
-  {
-  }
+    FeaturePerId(unsigned int feature_idx, unsigned int start_frame_idx)
+            : feature_id(feature_idx), start_frame_id(start_frame_idx) {
+    }
 
-  int endFrame();
+    /*!
+         * 判断该特征点是否能够用于计算重投影误差
+         * 由于WINDOW的最后一帧(WINDOW_SIZE - 1)不一定是key_frame,
+         * 所以最后一帧的key_frame为WINDOW中的倒数第二帧(WINDOW_SIZE - 2).
+         * 而要用与计算重投影误差至少需要被2个key_frame观测到,
+         * 所以start_frame < WINDOW_SIZE - 2
+         * @return
+         */
+    bool is_suitable_to_reprojection() const { return get_used_num() >= 2 && start_frame_id + 2 < WINDOW_SIZE; }
+
+    unsigned int get_end_frame_id() const { return start_frame_id + feature_per_frame.size() - 1; }
+    unsigned int get_used_num() const { return feature_per_frame.size(); }
 };
 
-class FeatureManager
-{
+class FeatureManager {
 public:
-  FeatureManager(Matrix3d _Rs[]);
+    explicit FeatureManager(Matrix3d r_wi[]);
 
-  void setRic(Matrix3d _ric[]);
+    void set_r_ic(Matrix3d r_ic[]);
 
-  void clearState();
+    void clear_state();
 
-  int getFeatureCount();
+    unsigned int get_feature_count();
 
-  bool addFeatureCheckParallax(int frame_count, const map<int, vector<pair<int, Eigen::Matrix<double, 7, 1>>>> &image, double td);
-  void debugShow();
-  vector<pair<Vector3d, Vector3d>> getCorresponding(int frame_count_l, int frame_count_r);
+    bool add_feature_and_check_latest_frame_parallax(unsigned int frame_count, const map<int, vector<pair<int, Eigen::Matrix<double, 7, 1>>>> &image, double td);
+    void debugShow();
+    vector<pair<Vector3d, Vector3d>> get_corresponding(unsigned int frame_count_l, unsigned int frame_count_r);
 
-  //void updateDepth(const VectorXd &x);
-  void setDepth(const VectorXd &x);
-  void removeFailures();
-  void clearDepth(const VectorXd &x);
-  VectorXd getDepthVector();
-  void triangulate(Vector3d Ps[], Vector3d tic[], Matrix3d ric[]);
-  void removeBackShiftDepth(Eigen::Matrix3d marg_R, Eigen::Vector3d marg_P, Eigen::Matrix3d new_R, Eigen::Vector3d new_P);
-  void removeBack();
-  void removeFront(int frame_count);
-  void removeOutlier();
-  list<FeaturePerId> feature;
-  int last_track_num;
+    //void updateDepth(const VectorXd &x);
+    void set_depth(const VectorXd &x);
+    void remove_failures();
+    void clear_depth(const VectorXd &x);
+    VectorXd get_depth_vector();
+    void triangulate(Vector3d p_imu[], Vector3d t_ic[], Matrix3d r_ic[]);
+
+    /// @brief 滑窗中移除了最老帧，更新frame index，并将持有特征的深度信息转移给次老帧
+    void remove_back_shift_depth(const Eigen::Matrix3d &marg_R, const Eigen::Vector3d &marg_P, const Eigen::Matrix3d &new_R, const Eigen::Vector3d &new_P);
+    void remove_back();
+    void remove_front(unsigned int frame_count);
+    void remove_outlier();
+    list<FeaturePerId> feature;
+    unordered_map<unsigned long, FeaturePerId> features_map;
+    vector<unsigned long> feature_id_erase;
+    unsigned int last_track_num {0};
 
 private:
-  double compensatedParallax2(const FeaturePerId &it_per_id, int frame_count);
-  const Matrix3d *Rs;
-  Matrix3d ric[NUM_OF_CAM];
+    double compensated_parallax2(const FeaturePerId &it_per_id, unsigned int frame_count);
+    const Matrix3d *_r_wi;
+    Matrix3d _r_ic[NUM_OF_CAM];
 };
 
 #endif
