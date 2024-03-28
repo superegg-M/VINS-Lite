@@ -142,7 +142,7 @@ void Estimator::processImage(const map<int, vector<pair<int, Eigen::Matrix<doubl
     //ROS_DEBUG("this frame is--------------------%s", marginalization_flag ? "reject" : "accept");
     //ROS_DEBUG("%s", marginalization_flag ? "Non-keyframe" : "Keyframe");
     //ROS_DEBUG("Solving %d", frame_count);
-    // cout << "number of feature: " << f_manager.get_feature_count()<<endl;
+    // cout << "number of feature: " << f_manager.get_suitable_feature_count()<<endl;
     Headers[frame_count] = header;
 
     ImageFrame imageframe(image, header);
@@ -255,12 +255,12 @@ bool Estimator::initialStructure() {
     Vector3d T[frame_count + 1];
     map<int, Vector3d> sfm_tracked_points;
     vector<SFMFeature> sfm_f;
-    for (auto &it_per_id : f_manager.feature) {
-        unsigned int imu_j = it_per_id.start_frame_id;
+    for (auto &it_per_id : f_manager.features_map) {
+        unsigned int imu_j = it_per_id.second.start_frame_id;
         SFMFeature tmp_feature;
         tmp_feature.state = false;
-        tmp_feature.id = it_per_id.feature_id;
-        for (auto &it_per_frame : it_per_id.feature_per_frame) {
+        tmp_feature.id = it_per_id.second.feature_id;
+        for (auto &it_per_frame : it_per_id.second.feature_per_frame) {
             Vector3d pts_j = it_per_frame.point;
             tmp_feature.observation.emplace_back(imu_j++, Eigen::Vector2d{pts_j.x(), pts_j.y()});
         }
@@ -396,9 +396,9 @@ bool Estimator::visualInitialAlign() {
             Vs[kv] = frame_i->second.R * x.segment<3>(kv * 3);
         }
     }
-    for (auto &it_per_id : f_manager.feature) {
-        if (it_per_id.is_suitable_to_reprojection()) {
-            it_per_id.estimated_depth *= s;
+    for (auto &it_per_id : f_manager.features_map) {
+        if (it_per_id.second.is_suitable_to_reprojection()) {
+            it_per_id.second.estimated_depth *= s;
         }
     }
 
@@ -490,7 +490,7 @@ void Estimator::vector2double() {
     }
 
     VectorXd dep = f_manager.get_depth_vector();
-    for (int i = 0; i < f_manager.get_feature_count(); i++)
+    for (int i = 0; i < f_manager.get_suitable_feature_count(); i++)
         para_Feature[i][0] = dep(i);
     if (ESTIMATE_TD)
         para_Td[0][0] = td;
@@ -558,7 +558,7 @@ void Estimator::double2vector()
     }
 
     VectorXd dep = f_manager.get_depth_vector();
-    for (int i = 0; i < f_manager.get_feature_count(); i++)
+    for (int i = 0; i < f_manager.get_suitable_feature_count(); i++)
         dep(i) = para_Feature[i][0];
     f_manager.set_depth(dep);
     if (ESTIMATE_TD)
@@ -919,11 +919,11 @@ void Estimator::problemSolve() {
     {
         unsigned int feature_index = 0;
         // 遍历每一个特征
-        for (auto &it_per_id : f_manager.feature) { // 遍历每个landmark
+        for (auto &it_per_id : f_manager.features_map) { // 遍历每个landmark
             // 由于第WINDOW_SIZE帧是new frame, 其是否为key frame是不定的, 而第WINDOW_SIZE - 1帧是否为key frame也是不定的
             // 第WINDOW_SIZE - 2帧才必定是key frame, 而landmark至少需被2个key frame观测到
             // 所以landmark的start frame必须小于WINDOW_SIZE - 2才有意义
-            if (it_per_id.is_suitable_to_reprojection()) {
+            if (it_per_id.second.is_suitable_to_reprojection()) {
                 shared_ptr<graph_optimization::VertexInverseDepth> verterxPoint(new graph_optimization::VertexInverseDepth());
                 Vec1 inv_d(para_Feature[feature_index++][0]);
                 verterxPoint->set_parameters(inv_d);
@@ -931,11 +931,11 @@ void Estimator::problemSolve() {
                 vertexPt_vec.push_back(verterxPoint);
 
                 // 遍历所有的观测 (landmark所关联的frame), 计算视觉重投影误差
-                unsigned int imu_i = it_per_id.start_frame_id;
-                const Vector3d &pts_i = it_per_id.feature_per_frame[0].point;
-                for (unsigned int index = 1; index < it_per_id.feature_per_frame.size(); ++index) {
+                unsigned int imu_i = it_per_id.second.start_frame_id;
+                const Vector3d &pts_i = it_per_id.second.feature_per_frame[0].point;
+                for (unsigned int index = 1; index < it_per_id.second.feature_per_frame.size(); ++index) {
                     unsigned int imu_j = imu_i + index;
-                    const Vector3d &pts_j = it_per_id.feature_per_frame[index].point;
+                    const Vector3d &pts_j = it_per_id.second.feature_per_frame[index].point;
 
                     std::shared_ptr<graph_optimization::EdgeReprojection> edge(new graph_optimization::EdgeReprojection(pts_i, pts_j));
                     std::vector<std::shared_ptr<graph_optimization::Vertex>> edge_vertex;
@@ -970,7 +970,7 @@ void Estimator::problemSolve() {
         }
     }
 
-    problem.solve(10);
+    problem.solve(5);
     // _lambda_last = std::max(problem.get_current_lambda(), 0.);
 
     // update bprior_,  Hprior_ do not need update

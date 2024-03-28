@@ -6,6 +6,7 @@
 #include <vector>
 #include <numeric>
 #include <map>
+#include <unordered_map>
 using namespace std;
 
 #include <eigen3/Eigen/Dense>
@@ -54,7 +55,8 @@ public:
     Vector3d gt_p;
 
     FeaturePerId(unsigned int feature_idx, unsigned int start_frame_idx)
-            : feature_id(feature_idx), start_frame_id(start_frame_idx) {
+    : feature_id(feature_idx), start_frame_id(start_frame_idx) {
+
     }
 
     /*!
@@ -67,6 +69,7 @@ public:
          */
     bool is_suitable_to_reprojection() const { return get_used_num() >= 2 && start_frame_id + 2 < WINDOW_SIZE; }
 
+    unsigned int get_start_frame_id() const { return start_frame_id; }
     unsigned int get_end_frame_id() const { return start_frame_id + feature_per_frame.size() - 1; }
     unsigned int get_used_num() const { return feature_per_frame.size(); }
 };
@@ -79,7 +82,7 @@ public:
 
     void clear_state();
 
-    unsigned int get_feature_count();
+    unsigned int get_suitable_feature_count();
 
     bool add_feature_and_check_latest_frame_parallax(unsigned int frame_count, const map<int, vector<pair<int, Eigen::Matrix<double, 7, 1>>>> &image, double td);
     void debugShow();
@@ -97,7 +100,7 @@ public:
     void remove_back();
     void remove_front(unsigned int frame_count);
     void remove_outlier();
-    list<FeaturePerId> feature;
+//    list<FeaturePerId> feature;
     unordered_map<unsigned long, FeaturePerId> features_map;
     vector<unsigned long> feature_id_erase;
     unsigned int last_track_num {0};
