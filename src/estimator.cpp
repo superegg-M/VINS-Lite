@@ -148,6 +148,7 @@ void Estimator::processImage(const map<int, vector<pair<int, Eigen::Matrix<doubl
     ImageFrame imageframe(image, header);
     imageframe.pre_integration = tmp_pre_integration;
     all_image_frame.insert(make_pair(header, imageframe));
+    std::cout << "numbers of all_image_frame: " << all_image_frame.size() << std::endl;
 #ifdef CAIN_IMU_INTEGRATION
     tmp_pre_integration = new vins::IMUIntegration{acc_0, gyr_0, Bas[frame_count], Bgs[frame_count]};
 #else
@@ -1127,6 +1128,8 @@ void Estimator::slideWindow() {
     }
     else {
         if (frame_count == WINDOW_SIZE) {
+            double t_2nd = Headers[frame_count - 1];
+
             for (unsigned int i = 0; i < dt_buf[frame_count].size(); i++) {
                 double tmp_dt = dt_buf[frame_count][i];
                 Vector3d tmp_linear_acceleration = linear_acceleration_buf[frame_count][i];
@@ -1156,6 +1159,11 @@ void Estimator::slideWindow() {
             dt_buf[WINDOW_SIZE].clear();
             linear_acceleration_buf[WINDOW_SIZE].clear();
             angular_velocity_buf[WINDOW_SIZE].clear();
+
+            // TODO: 是否应该删除次新帧？
+            map<double, ImageFrame>::iterator it_2nd;
+            it_2nd = all_image_frame.find(t_2nd);
+            all_image_frame.erase(it_2nd);
 
             slideWindowNew();
         }
