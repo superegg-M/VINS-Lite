@@ -850,6 +850,8 @@ void Estimator::problemSolve() {
     // vector<shared_ptr<backend::VertexSpeedBias>> vertexVB_vec;
     // int pose_dim = 0;
 
+    TicToc t_new_problem;
+
     _problem = graph_optimization::ProblemSLAM();
     _vertex_pose_vec.clear();
     _vertex_motion_vec.clear();
@@ -971,6 +973,8 @@ void Estimator::problemSolve() {
         }
     }
 
+    std::cout << "t_new_problem = " << t_new_problem.toc() << std::endl;
+
     problem.solve(5);
     // _lambda_last = std::max(problem.get_current_lambda(), 0.);
 
@@ -1065,7 +1069,7 @@ void Estimator::backendOptimization() {
             // }
         }
     }
-    
+    std::cout << "t_whole_marginalization = " << t_whole_marginalization.toc() << std::endl;
 }
 
 
@@ -1168,6 +1172,8 @@ void Estimator::slideWindow() {
             slideWindowNew();
         }
     }
+
+    std::cout << "t_margin = " << t_margin.toc() << std::endl;
 }
 
 // real marginalization is removed in solve_ceres()
