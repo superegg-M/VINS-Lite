@@ -17,6 +17,8 @@ using namespace Eigen;
 
 #include "parameters.h"
 
+#define USE_OPENMP
+
 class FeaturePerFrame {
 public:
     FeaturePerFrame(const Eigen::Matrix<double, 7, 1> &data, double td) {
@@ -100,8 +102,17 @@ public:
     void remove_back();
     void remove_front(unsigned int frame_count);
     void remove_outlier();
+
+#ifdef USE_OPENMP
+    void update_features_vector();
+#endif
+
 //    list<FeaturePerId> feature;
     unordered_map<unsigned long, FeaturePerId> features_map;
+#ifdef USE_OPENMP
+    constexpr static unsigned int NUM_THREADS = 8;
+    vector<pair<unsigned long, FeaturePerId *>> features_vector;
+#endif
     vector<unsigned long> feature_id_erase;
     unsigned int last_track_num {0};
 
