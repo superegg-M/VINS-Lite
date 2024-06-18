@@ -1,7 +1,6 @@
 #include <iostream>
-
+#include <omp.h>
 #include "feature_manager.h"
-
 
 FeatureManager::FeatureManager(Matrix3d r_wi[]) : _r_wi(r_wi), feature_id_erase(NUM_OF_F) {
     for (auto & r : _r_ic) {
@@ -259,7 +258,54 @@ void FeatureManager::remove_outlier() {
  * @param new_P
  */
 void FeatureManager::remove_back_shift_depth(const Eigen::Matrix3d &marg_R, const Eigen::Vector3d &marg_P, const Eigen::Matrix3d &new_R, const Eigen::Vector3d &new_P) {
+#ifdef USE_OPENMP
+    static vector<unsigned long> ids_erase[NUM_THREADS];
+    for (unsigned int i = 0; i < NUM_THREADS; ++i) {
+        ids_erase[i].clear();
+    }
+#pragma omp parallel for num_threads(NUM_THREADS)
+    for (size_t n = 0; n < features_vector.size(); ++n) {
+        unsigned int index = omp_get_thread_num();
+
+        auto &&feature = features_vector[n];
+        if (feature.second->start_frame_id != 0) {   // 由于所有帧都左移1个frame, 所以feature中的start_frame_id需要减1
+            --feature.second->start_frame_id;
+        } else {    // 对于start_frame_id=0的feature, 则需要把frame从feature中删除并且重新以新的start_frame计算深度
+            Eigen::Vector3d uv_i = feature.second->feature_per_frame[0].point;
+            feature.second->feature_per_frame.erase(feature.second->feature_per_frame.begin());   // 把frame从feature中删除
+            if (feature.second->feature_per_frame.size() < 2) {    // 如果删除frame后, frame数小于2, 则该feature已无法计算重投影误差, 所以直接删除
+                ids_erase[index].emplace_back(feature.first);
+                continue;
+            }
+            // 以新的start_frame计算feature的深度
+            Eigen::Vector3d p_feature_c = uv_i * feature.second->estimated_depth;
+            Eigen::Vector3d p_feature_w = marg_R * p_feature_c + marg_P;
+            Eigen::Vector3d p_feature_c_new = new_R.transpose() * (p_feature_w - new_P);
+            double depth_new = p_feature_c_new[2];
+            if (depth_new > 0) {
+                feature.second->estimated_depth = depth_new;
+            } else {
+                feature.second->estimated_depth = INIT_DEPTH;
+            }
+        }
+        // remove tracking-lost feature after marginalize
+        /*
+        if (it->endFrame() < WINDOW_SIZE - 1)
+        {
+            feature.erase(it);
+        }
+        */
+    }
+
+    // 删除frame小于2的feature
+    for (auto &ids : ids_erase) {
+        for (auto &id : ids) {
+            features_map.erase(id);
+        }
+    }
+#else
     feature_id_erase.clear();
+
     for (auto &feature : features_map) {
         if (feature.second.start_frame_id != 0) {   // 由于所有帧都左移1个frame, 所以feature中的start_frame_id需要减1
             --feature.second.start_frame_id;
@@ -294,13 +340,44 @@ void FeatureManager::remove_back_shift_depth(const Eigen::Matrix3d &marg_R, cons
     for (auto &id : feature_id_erase) {
         features_map.erase(id);
     }
+#endif
 }
 
 /*!
  * 删除WINDOW中的oldest帧
  */
 void FeatureManager::remove_back() {
+#ifdef USE_OPENMP
+    static vector<unsigned long> ids_erase[NUM_THREADS];
+    for (unsigned int i = 0; i < NUM_THREADS; ++i) {
+        ids_erase[i].clear();
+    }
+
+#pragma omp parallel for num_threads(NUM_THREADS)
+    for (size_t n = 0; n < features_vector.size(); ++n) {
+        unsigned int index = omp_get_thread_num();
+
+        auto &&feature = features_vector[n];
+        if (feature.second->start_frame_id != 0) {
+            --feature.second->start_frame_id;
+        }
+        else {
+            feature.second->feature_per_frame.erase(feature.second->feature_per_frame.begin());
+            if (feature.second->feature_per_frame.empty()) {
+                ids_erase[index].emplace_back(feature.first);
+            }
+        }
+    }
+
+    // 删除frame小于2的feature
+    for (auto &ids : ids_erase) {
+        for (auto &id : ids) {
+            features_map.erase(id);
+        }
+    }
+#else
     feature_id_erase.clear();
+
     for (auto &feature : features_map) {
         if (feature.second.start_frame_id != 0) {
             --feature.second.start_frame_id;
@@ -317,6 +394,7 @@ void FeatureManager::remove_back() {
     for (auto &id : feature_id_erase) {
         features_map.erase(id);
     }
+#endif
 }
 
 /*!
@@ -324,11 +402,47 @@ void FeatureManager::remove_back() {
  * @param frame_count frame的总个数
  */
 void FeatureManager::remove_front(unsigned int frame_count) {
-    feature_id_erase.clear();
     /*
      * WINDOW的大小为frame_count
      * Camera最新观测到的camera_frame的id为frame_count
      * */
+#ifdef USE_OPENMP
+    static vector<unsigned long> ids_erase[NUM_THREADS];
+    for (unsigned int i = 0; i < NUM_THREADS; ++i) {
+        ids_erase[i].clear();
+    }
+
+#pragma omp parallel for num_threads(NUM_THREADS)
+    for (size_t n = 0; n < features_vector.size(); ++n) {
+        unsigned int index = omp_get_thread_num();
+
+        auto &&feature = features_vector[n];
+        /*
+         * 1. 若start_frame为camera_frame, 则start_frame需要减1, 因为WINDOW中的newest_frame会被删除, 其id为frame_count - 1,
+         *    而frame_camera则会移东到WINDOW中的newest_frame中。
+         *
+         * 2. 若end_frame为newest_frame(id为frame_count-1), 则需要把该end_frame从feature中删除, 因为newest_frame会被删除
+         * */
+        if (feature.second->start_frame_id == frame_count) {
+            --feature.second->start_frame_id;
+        } else if (feature.second->get_end_frame_id() + 1 >= frame_count) {
+            // feature.second.feature_local_infos.begin() + j 对应newest_frame
+            unsigned long j = frame_count - 1 - feature.second->start_frame_id;
+            feature.second->feature_per_frame.erase(feature.second->feature_per_frame.begin() + j);
+            if (feature.second->feature_per_frame.empty()) {
+                ids_erase[index].emplace_back(feature.first);
+            }
+        }
+    }
+
+    for (auto &ids : ids_erase) {
+        for (auto &id : ids) {
+            features_map.erase(id);
+        }
+    }
+#else
+    feature_id_erase.clear();
+
     for (auto &feature : features_map) {
         /*
          * 1. 若start_frame为camera_frame, 则start_frame需要减1, 因为WINDOW中的newest_frame会被删除, 其id为frame_count - 1,
@@ -352,6 +466,8 @@ void FeatureManager::remove_front(unsigned int frame_count) {
     for (auto &id : feature_id_erase) {
         features_map.erase(id);
     }
+#endif
+
 }
 
 
@@ -388,3 +504,12 @@ double FeatureManager::compensated_parallax2(const FeaturePerId &it_per_id, unsi
 
     return ans;
 }
+
+#ifdef USE_OPENMP
+void FeatureManager::update_features_vector() {
+    features_vector.clear();
+    for (auto &feature : features_map) {
+        features_vector.emplace_back(feature.first, &feature.second);
+    }
+}
+#endif

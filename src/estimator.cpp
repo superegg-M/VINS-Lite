@@ -977,6 +977,7 @@ void Estimator::problemSolve() {
 
     problem.solve(5);
     // _lambda_last = std::max(problem.get_current_lambda(), 0.);
+    std::cout << "_ordering_landmarks: " << problem._ordering_landmarks << std::endl;
 
     // update bprior_,  Hprior_ do not need update
     if (Hprior_.rows() > 0) {
@@ -1075,6 +1076,9 @@ void Estimator::backendOptimization() {
 
 void Estimator::slideWindow() {
     TicToc t_margin;
+#ifdef USE_OPENMP
+    f_manager.update_features_vector();
+#endif
     if (marginalization_flag == MARGIN_OLD) {
         double t_0 = Headers[0];
         back_R0 = Rs[0];
