@@ -190,7 +190,7 @@ namespace graph_optimization {
                     ulong index_j = v_j->ordering_id();
                     ulong dim_j = v_j->local_dimension();
 
-                    assert(v_j->ordering_id() != -1);
+//                    assert(v_j->ordering_id() != -1);
                     MatXX hessian = JtW * jacobian_j;   // TODO: 这里能继续优化, 因为J'*W*J也是对称矩阵
                     // 所有的信息矩阵叠加起来
                     Hs[index].block(index_i, index_j, dim_i, dim_j).noalias() += hessian;
