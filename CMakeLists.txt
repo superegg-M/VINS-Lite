@@ -13,6 +13,10 @@ find_package(Pangolin REQUIRED)
 find_package(OpenCV REQUIRED)
 find_package(Boost REQUIRED COMPONENTS filesystem program_options system)
 
+find_package ( OpenMP REQUIRED )
+
+#list ( APPEND PRJ_LIBRARIES OpenMP::OpenMP_CXX )
+
 
 message(WARNING "OpenCV_VERSION: ${OpenCV_VERSION}")
 
@@ -78,13 +82,14 @@ target_link_libraries(MyVio
   ${OpenCV_LIBS}  
   ${CERES_LIBRARIES}
 	${Pangolin_LIBRARIES}
-  camera_model)
+  camera_model
+  OpenMP::OpenMP_CXX)
 
 add_executable(run_euroc test/run_euroc.cpp)
 target_link_libraries(run_euroc 
   MyVio  
-  -lpthread) 
+  -lpthread
+  OpenMP::OpenMP_CXX) 
 
 add_executable(testCurveFitting test/CurveFitting.cpp)
 target_link_libraries(testCurveFitting MyVio)
-
