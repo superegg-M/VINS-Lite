@@ -69,16 +69,15 @@ namespace graph_optimization {
             unsigned int index = omp_get_thread_num();
 
             auto &edge = marginalized_edges[n];
-            // 若曾经solve problem, 则无需再次计算
-            // edge->compute_residual();
-            // edge->compute_jacobians();
             auto &&jacobians = edge->jacobians();
             auto &&vertices = edge->vertices();
 
             assert(jacobians.size() == vertices.size());
             for (size_t i = 0; i < vertices.size(); ++i) {
-                auto v_i = vertices[i];
-                auto jacobian_i = jacobians[i];
+                auto &&v_i = vertices[i];
+                if (v_i->is_fixed()) continue;
+
+                auto &&jacobian_i = jacobians[i];
                 ulong index_i = v_i->ordering_id();
                 ulong dim_i = v_i->local_dimension();
 
@@ -96,15 +95,15 @@ namespace graph_optimization {
 
                     MatXX hessian = JtW * jacobian_j;
 
-                    assert(hessian.rows() == v_i->local_dimension() && hessian.cols() == v_j->local_dimension());
+//                    assert(hessian.rows() == v_i->local_dimension() && hessian.cols() == v_j->local_dimension());
                     // 所有的信息矩阵叠加起来
-                    Hs[index].block(index_i, index_j, dim_i, dim_j) += hessian;
+                    Hs[index].block(index_i, index_j, dim_i, dim_j).noalias() += hessian;
                     if (j != i) {
                         // 对称的下三角
-                        Hs[index].block(index_j, index_i, dim_j, dim_i) += hessian.transpose();
+                        Hs[index].block(index_j, index_i, dim_j, dim_i).noalias() += hessian.transpose();
                     }
                 }
-                bs[index].segment(index_i, dim_i) -= drho * jacobian_i.transpose() * edge->information() * edge->residual();
+                bs[index].segment(index_i, dim_i).noalias() -= drho * jacobian_i.transpose() * edge->information() * edge->residual();
             }
         }
 
@@ -176,7 +175,7 @@ namespace graph_optimization {
                 ulong size = landmark_vertex.second->local_dimension();
                 if (size == 1) {
                     if (Hll(idx, idx) > 1e-12) {
-                        temp_H.row(idx) = Hsl.col(idx) / Hll(idx, idx);
+                        temp_H.row(idx).noalias() = Hsl.col(idx) / Hll(idx, idx);
                         temp_b(idx) = bll(idx) / Hll(idx, idx);
                     } else {
                         temp_H.row(idx).setZero();
@@ -185,8 +184,8 @@ namespace graph_optimization {
                 } else {
                     auto Hmm_ldlt = Hll.block(idx, idx, size, size).ldlt();
                     if (Hmm_ldlt.info() == Eigen::Success) {
-                        temp_H.block(idx, 0, size, state_dim) = Hmm_ldlt.solve(Hsl.block(0, idx, state_dim, size).transpose());
-                        temp_b.segment(idx, size) = Hmm_ldlt.solve(bll.segment(idx, size));
+                        temp_H.block(idx, 0, size, state_dim).noalias() = Hmm_ldlt.solve(Hsl.block(0, idx, state_dim, size).transpose());
+                        temp_b.segment(idx, size).noalias() = Hmm_ldlt.solve(bll.segment(idx, size));
                     } else {
                         temp_H.block(idx, 0, size, state_dim).setZero();
                         temp_b.segment(idx, size).setZero();
@@ -263,19 +262,19 @@ namespace graph_optimization {
             // 将 row i 移动矩阵最下面
             Eigen::MatrixXd temp_rows = h_state_schur.block(idx, 0, dim, state_dim);
             Eigen::MatrixXd temp_bot_rows = h_state_schur.block(idx + dim, 0, state_dim - idx - dim, state_dim);
-            h_state_schur.block(idx, 0, state_dim - idx - dim, state_dim) = temp_bot_rows;
-            h_state_schur.block(state_dim - dim, 0, dim, state_dim) = temp_rows;
+            h_state_schur.block(idx, 0, state_dim - idx - dim, state_dim).noalias() = temp_bot_rows;
+            h_state_schur.block(state_dim - dim, 0, dim, state_dim).noalias() = temp_rows;
 
             // 将 col i 移动矩阵最右边
             Eigen::MatrixXd temp_cols = h_state_schur.block(0, idx, state_dim, dim);
             Eigen::MatrixXd temp_right_cols = h_state_schur.block(0, idx + dim, state_dim, state_dim - idx - dim);
-            h_state_schur.block(0, idx, state_dim, state_dim - idx - dim) = temp_right_cols;
-            h_state_schur.block(0, state_dim - dim, state_dim, dim) = temp_cols;
+            h_state_schur.block(0, idx, state_dim, state_dim - idx - dim).noalias() = temp_right_cols;
+            h_state_schur.block(0, state_dim - dim, state_dim, dim).noalias() = temp_cols;
 
             Eigen::VectorXd temp_b = b_state_schur.segment(idx, dim);
             Eigen::VectorXd temp_b_tail = b_state_schur.segment(idx + dim, state_dim - idx - dim);
-            b_state_schur.segment(idx, state_dim - idx - dim) = temp_b_tail;
-            b_state_schur.segment(state_dim - dim, dim) = temp_b;
+            b_state_schur.segment(idx, state_dim - idx - dim).noalias() = temp_b_tail;
+            b_state_schur.segment(state_dim - dim, dim).noalias() = temp_b;
         };
         if (vertex_motion) {
             move_vertex_to_bottom(vertex_motion);
