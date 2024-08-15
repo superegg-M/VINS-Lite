@@ -176,7 +176,7 @@ namespace graph_optimization {
             // Hll^-1 * Hsl^T
             MatXX temp_H = Hll_inv.asDiagonal() * h_state_landmark.block(state_dim, 0, landmark_size, state_dim);  
             // Hll^-1 * bl
-            VecX temp_b = Hll_inv.cwiseProduct(b_state_landmark.tail(landmark_size));   
+//            VecX temp_b = Hll_inv.cwiseProduct(b_state_landmark.tail(landmark_size));
 
             // (Hss - Hsl * Hll^-1 * Hls) * xs = bs - Hsl * Hll^-1 * bl
 #ifdef USE_OPENMP
@@ -230,7 +230,7 @@ namespace graph_optimization {
             }
             
         } else {
-            auto Hmm_ldlt = h_state_schur.block(reserve_size, reserve_size, marginalized_size, marginalized_size).ldlt();
+            auto &&Hmm_ldlt = h_state_schur.block(reserve_size, reserve_size, marginalized_size, marginalized_size).ldlt();
             if (Hmm_ldlt.info() == Eigen::Success) {
                 temp_H = Hmm_ldlt.solve(Hmr);
 //                temp_b = Hmm_ldlt.solve(b_state_schur.tail(marginalized_size));
@@ -431,81 +431,32 @@ namespace graph_optimization {
         MatXX h_state_schur;
         VecX b_state_schur;
         if (marginalized_landmark_size > 0) {
-//            MatXX Hss = h_state_landmark.block(0, 0, state_dim, state_dim);
-            MatXX Hll = h_state_landmark.block(state_dim, state_dim, marginalized_landmark_size, marginalized_landmark_size);
-            MatXX Hsl = h_state_landmark.block(0, state_dim, state_dim, marginalized_landmark_size);
-//            MatXX Hlp = h_state_landmark.block(state_dim, 0, marginalized_landmark_size, state_dim);
-            VecX bss = b_state_landmark.segment(0, state_dim);
-            VecX bll = b_state_landmark.segment(state_dim, marginalized_landmark_size);
+            // Hll
+            VecX Hll = h_state_landmark.block(state_dim, state_dim, marginalized_landmark_size, marginalized_landmark_size).diagonal();
+            // 由于叠加了eps, 所以能够保证Hll可逆
+            VecX Hll_inv = Hll.array().inverse();
 
-            MatXX temp_H(MatXX::Zero(marginalized_landmark_size, state_dim));  // Hll^-1 * Hsl^T
-            VecX temp_b(VecX::Zero(marginalized_landmark_size, 1));   // Hll^-1 * bl
-#ifdef USE_OPENMP
-#pragma omp parallel for num_threads(NUM_THREADS) default(none) shared(marginalized_landmark_vector, Hll, Hsl, bll, temp_H, temp_b, state_dim)
-            for (size_t n = 0; n < marginalized_landmark_vector.size(); ++n) {
-                auto &&landmark_vertex = marginalized_landmark_vector[n];
-                ulong idx = landmark_vertex.second->ordering_id() - state_dim;
-                ulong size = landmark_vertex.second->local_dimension();
-                if (size == 1) {
-                    if (Hll(idx, idx) > 1e-12) {
-                        temp_H.row(idx).noalias() = Hsl.col(idx) / Hll(idx, idx);
-                        temp_b(idx) = bll(idx) / Hll(idx, idx);
-                    } else {
-                        temp_H.row(idx).setZero();
-                        temp_b(idx) = 0.;
-                    }
-                } else {
-                    auto Hmm_ldlt = Hll.block(idx, idx, size, size).ldlt();
-                    if (Hmm_ldlt.info() == Eigen::Success) {
-                        temp_H.block(idx, 0, size, state_dim).noalias() = Hmm_ldlt.solve(Hsl.block(0, idx, state_dim, size).transpose());
-                        temp_b.segment(idx, size).noalias() = Hmm_ldlt.solve(bll.segment(idx, size));
-                    } else {
-                        temp_H.block(idx, 0, size, state_dim).setZero();
-                        temp_b.segment(idx, size).setZero();
-                    }
-                }
-            }
-#else
-            for (const auto& landmark_vertex : marginalized_landmark) {
-                ulong idx = landmark_vertex.second->ordering_id() - state_dim;
-                ulong size = landmark_vertex.second->local_dimension();
-                if (size == 1) {
-                    if (Hll(idx, idx) > 1e-12) {
-                        temp_H.row(idx) = Hsl.col(idx) / Hll(idx, idx);
-                        temp_b(idx) = bll(idx) / Hll(idx, idx);
-                    } else {
-                        temp_H.row(idx).setZero();
-                        temp_b(idx) = 0.;
-                    }
-                } else {
-                    auto Hmm_ldlt = Hll.block(idx, idx, size, size).ldlt();
-                    if (Hmm_ldlt.info() == Eigen::Success) {
-                        temp_H.block(idx, 0, size, state_dim) = Hmm_ldlt.solve(Hsl.block(0, idx, state_dim, size).transpose());
-                        temp_b.segment(idx, size) = Hmm_ldlt.solve(bll.segment(idx, size));
-                    } else {
-                        temp_H.block(idx, 0, size, state_dim).setZero();
-                        temp_b.segment(idx, size).setZero();
-                    }
-                }
-            }
-#endif
+            // Hll^-1 * Hsl^T
+            MatXX temp_H = Hll_inv.asDiagonal() * h_state_landmark.block(state_dim, 0, marginalized_landmark_size, state_dim);
+            // Hll^-1 * bl
+//            VecX temp_b = Hll_inv.cwiseProduct(b_state_landmark.tail(marginalized_landmark_size));
 
             // (Hpp - Hsl * Hll^-1 * Hlp) * dxp = bp - Hsl * Hll^-1 * bl
 #ifdef USE_OPENMP
             h_state_schur = MatXX::Zero(state_dim, state_dim);
-#pragma omp parallel for num_threads(NUM_THREADS) default(none) shared(h_state_schur, Hsl, temp_H, state_dim)
+#pragma omp parallel for num_threads(NUM_THREADS) default(none) shared(h_state_schur, temp_H, state_dim)
             for (ulong i = 0; i < state_dim; ++i) {
-                h_state_schur(i, i) = -Hsl.row(i).dot(temp_H.col(i));
+                h_state_schur(i, i) = -temp_H.col(i).dot(h_state_landmark.col(i).tail(marginalized_landmark_size));
                 for (ulong j = i + 1; j < state_dim; ++j) {
-                    h_state_schur(i, j) = -Hsl.row(i).dot(temp_H.col(j));
+                    h_state_schur(i, j) = -temp_H.col(j).dot(h_state_landmark.col(i).tail(marginalized_landmark_size));
                     h_state_schur(j, i) = h_state_schur(i, j);
                 }
             }
             h_state_schur += h_state_landmark.block(0, 0, state_dim, state_dim);
 #else
-            h_state_schur = h_state_landmark.block(0, 0, state_dim, state_dim) - Hsl * temp_H;
+            h_state_schur = h_state_landmark.block(0, 0, state_dim, state_dim) - h_state_landmark.block(0, state_dim, state_dim, marginalized_landmark_size) * temp_H;
 #endif
-            b_state_schur = bss - Hsl * temp_b;
+            b_state_schur = b_state_landmark.head(state_dim) - temp_H.transpose() * b_state_landmark.tail(marginalized_landmark_size);
         } else {
             h_state_schur = h_state_landmark;
             b_state_schur = b_state_landmark;
@@ -553,33 +504,31 @@ namespace graph_optimization {
         auto marginalize_bottom_vertex = [&](const std::shared_ptr<Vertex> &vertex) {
             ulong marginalized_size = vertex->local_dimension();
             ulong reserve_size = state_dim - marginalized_size;
-//            MatXX Hrr = h_state_schur.block(0, 0, reserve_size, reserve_size);
-            MatXX Hmm = h_state_schur.block(reserve_size, reserve_size, marginalized_size, marginalized_size);
-            MatXX Hrm = h_state_schur.block(0, reserve_size, reserve_size, marginalized_size);
-//            MatXX Hmr = h_state_schur.block(reserve_size, 0, marginalized_size, reserve_size);
-            VecX brr = b_state_schur.segment(0, reserve_size);
-            VecX bmm = b_state_schur.segment(reserve_size, marginalized_size);
 
-            MatXX temp_H(MatXX::Zero(marginalized_size, reserve_size));  // Hmm^-1 * Hrm^T
-            VecX temp_b(VecX::Zero(marginalized_size, 1));   // Hmm^-1 * bm
+            // Hmm^-1 * Hrm^T
+            MatXX temp_H(MatXX::Zero(marginalized_size, reserve_size));
+
+            // Hmm^-1 * bm
+//            VecX temp_b(VecX::Zero(marginalized_size, 1));
+
             ulong size = vertex->local_dimension();
             if (size == 1) {
-                if (Hmm(0, 0) > 1e-12) {
-                    temp_H = Hrm.transpose() / Hmm(0, 0);
-                    temp_b = bmm / Hmm(0, 0);
+                if (h_state_schur(reserve_size, reserve_size) > 1e-12) {
+                    temp_H = h_state_schur.block(reserve_size, 0, marginalized_size, reserve_size) / h_state_schur(reserve_size, reserve_size);
+//                    temp_b = bmm / h_state_schur(reserve_size, reserve_size);
                 } else {
                     temp_H.setZero();
-                    temp_b.setZero();
+//                    temp_b.setZero();
                 }
                 
             } else {
-                auto Hmm_ldlt = Hmm.ldlt();
+                auto &&Hmm_ldlt = h_state_schur.block(reserve_size, reserve_size, marginalized_size, marginalized_size).ldlt();
                 if (Hmm_ldlt.info() == Eigen::Success) {
-                    temp_H = Hmm_ldlt.solve(Hrm.transpose());
-                    temp_b = Hmm_ldlt.solve(bmm);
+                    temp_H = Hmm_ldlt.solve(h_state_schur.block(reserve_size, 0, marginalized_size, reserve_size));
+//                    temp_b = Hmm_ldlt.solve(bmm);
                 } else {
                     temp_H.setZero();
-                    temp_b.setZero();
+//                    temp_b.setZero();
                 }
             }
 
@@ -589,9 +538,9 @@ namespace graph_optimization {
             h_state_schur = MatXX::Zero(reserve_size, reserve_size);
 #pragma omp parallel for num_threads(NUM_THREADS) default(none) shared(h_state_schur, Hrm, temp_H, reserve_size)
             for (ulong i = 0; i < reserve_size; ++i) {
-                h_state_schur(i, i) = -Hrm.row(i).dot(temp_H.col(i));
+                h_state_schur(i, i) = -temp_H.col(i).dot(h_state_schur.col(i).tail(marginalized_size));
                 for (ulong j = i + 1; j < reserve_size; ++j) {
-                    h_state_schur(i, j) = -Hrm.row(i).dot(temp_H.col(j));
+                    h_state_schur(i, j) = -temp_H.col(j).dot(h_state_schur.col(i).tail(marginalized_size));
                     h_state_schur(j, i) = h_state_schur(i, j);
                 }
             }
@@ -608,7 +557,7 @@ namespace graph_optimization {
             //     }
             // }
 #endif
-            b_state_schur = brr - Hrm * temp_b;
+            b_state_schur = b_state_schur.head(0, reserve_size) - temp_H.transpose() * b_state_schur.tail(marginalized_size);
 
             state_dim = reserve_size;
         };
