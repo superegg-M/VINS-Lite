@@ -171,6 +171,10 @@ void Estimator::processImage(const map<int, vector<pair<int, Eigen::Matrix<doubl
         }
     }
 
+#ifdef USE_OPENMP
+    f_manager.update_features_vector();
+#endif
+
     if (solver_flag == INITIAL) {
         if (frame_count == WINDOW_SIZE) {
             bool result = false;
@@ -181,7 +185,7 @@ void Estimator::processImage(const map<int, vector<pair<int, Eigen::Matrix<doubl
             }
             if (result) {
                 solver_flag = NON_LINEAR;
-                solveOdometry();
+                // solveOdometry();
                 slideWindow();
                 f_manager.remove_failures();
                 cout << "Initialization finish!" << endl;
@@ -738,29 +742,30 @@ void Estimator::MargOldFrame() {
     //     }
     // }
 
-    // 先验
-    {
-        // 已经有 Prior 了
-        if (Hprior_.rows() > 0) {
-            problem.set_h_prior(Hprior_); // 告诉这个 problem
-            problem.set_b_prior(bprior_);
-            // problem.set_err_prior(errprior_);
-            // problem.set_Jt_prior(Jprior_inv_);
-            problem.extend_prior_hessian_size(15); // 但是这个 prior 还是之前的维度，需要扩展下装新的pose
-        } else {
-            Hprior_ = MatXX(pose_dim, pose_dim);
-            Hprior_.setZero();
-            bprior_ = VecX(pose_dim);
-            bprior_.setZero();
-            problem.set_h_prior(Hprior_); // 告诉这个 problem
-            problem.set_b_prior(bprior_);
-        }
-    }
+//    // 先验
+//    {
+//        // 已经有 Prior 了
+//        if (Hprior_.rows() > 0) {
+//            problem.set_h_prior(Hprior_); // 告诉这个 problem
+//            problem.set_b_prior(bprior_);
+//            // problem.set_err_prior(errprior_);
+//            // problem.set_Jt_prior(Jprior_inv_);
+//            problem.extend_prior_hessian_size(15); // 但是这个 prior 还是之前的维度，需要扩展下装新的pose
+//        } else {
+//            Hprior_ = MatXX(pose_dim, pose_dim);
+//            Hprior_.setZero();
+//            bprior_ = VecX(pose_dim);
+//            bprior_.setZero();
+//            problem.set_h_prior(Hprior_); // 告诉这个 problem
+//            problem.set_b_prior(bprior_);
+//        }
+//    }
 
     std::vector<std::shared_ptr<graph_optimization::Vertex>> marg_vertex;
     marg_vertex.push_back(vertexCams_vec[0]);
     marg_vertex.push_back(vertexVB_vec[0]);
     problem.marginalize(vertexCams_vec[0], vertexVB_vec[0]);
+    // problem.marginalize(vertexCams_vec[0], vertexVB_vec[0], _marg_landmarks, _marg_edges);
     Hprior_ = problem.get_h_prior();
     bprior_ = problem.get_b_prior();
     // errprior_ = problem.get_err_prior();
@@ -810,36 +815,40 @@ void Estimator::MargNewFrame() {
     //     pose_dim += vertexVB->LocalDimension();
     // }
 
-    // 先验
-    {
-        // 已经有 Prior 了
-        if (Hprior_.rows() > 0) {
-            problem.set_h_prior(Hprior_); // 告诉这个 problem
-            problem.set_b_prior(bprior_);
-            // problem.set_err_prior(errprior_);
-            // problem.set_Jt_prior(Jprior_inv_);
-
-            problem.extend_prior_hessian_size(15); // 但是这个 prior 还是之前的维度，需要扩展下装新的pose
-        }
-        else {
-            Hprior_ = MatXX(pose_dim, pose_dim);
-            Hprior_.setZero();
-            bprior_ = VecX(pose_dim);
-            bprior_.setZero();
-        }
-    }
+//    // 先验
+//    {
+//        // 已经有 Prior 了
+//        if (Hprior_.rows() > 0) {
+//            problem.set_h_prior(Hprior_); // 告诉这个 problem
+//            problem.set_b_prior(bprior_);
+//            // problem.set_err_prior(errprior_);
+//            // problem.set_Jt_prior(Jprior_inv_);
+//
+//            problem.extend_prior_hessian_size(15); // 但是这个 prior 还是之前的维度，需要扩展下装新的pose
+//        }
+//        else {
+//            Hprior_ = MatXX(pose_dim, pose_dim);
+//            Hprior_.setZero();
+//            bprior_ = VecX(pose_dim);
+//            bprior_.setZero();
+//        }
+//    }
 
     std::vector<std::shared_ptr<graph_optimization::Vertex>> marg_vertex;
     // 把窗口倒数第二个帧 marg 掉
-    marg_vertex.push_back(vertexCams_vec[WINDOW_SIZE - 1]);
-    marg_vertex.push_back(vertexVB_vec[WINDOW_SIZE - 1]);
+    // marg_vertex.push_back(vertexCams_vec[WINDOW_SIZE - 1]);
+    // marg_vertex.push_back(vertexVB_vec[WINDOW_SIZE - 1]);
     problem.marginalize(vertexCams_vec[WINDOW_SIZE - 1], vertexVB_vec[WINDOW_SIZE - 1]);
+    // problem.marginalize(vertexCams_vec[WINDOW_SIZE - 1], vertexVB_vec[WINDOW_SIZE - 1], _marg_landmarks, _marg_edges);
     Hprior_ = problem.get_h_prior();
     bprior_ = problem.get_b_prior();
     // errprior_ = problem.get_err_prior();
     // Jprior_inv_ = problem.get_Jt_prior();
 }
 void Estimator::problemSolve() {
+    
+
+
     // backend::LossFunction *lossfunction;
     // auto lossfunction = new graph_optimization::CauchyLoss(1.0);
     //    lossfunction = new backend::TukeyLoss(1.0);
@@ -861,6 +870,9 @@ void Estimator::problemSolve() {
     auto &vertexVB_vec = _vertex_motion_vec;
     auto &pose_dim = _state_dim;
 
+    _marg_landmarks.clear();
+    _marg_edges.clear();
+
     // 先把 外参数 节点加入图优化，这个节点在以后一直会被用到，所以我们把他放在第一个
     shared_ptr<graph_optimization::VertexPose> vertexExt(new graph_optimization::VertexPose());
     {
@@ -875,18 +887,65 @@ void Estimator::problemSolve() {
         } else {
             //ROS_DEBUG("estimate extinsic param");
         }
-        problem.add_vertex(vertexExt);
+        problem.add_state_vertex(vertexExt);
         pose_dim += vertexExt->local_dimension();
     }
 
+    // int imu_marg = (marginalization_flag == MARGIN_OLD) ? 0 : WINDOW_SIZE - 1; 
+    // vertexCams_vec.resize(WINDOW_SIZE + 1);
+    // vertexVB_vec.resize(WINDOW_SIZE + 1);
+    // // 相机的顶点(pose和motion), WINDOW_SIZE + 1 个
+    // for (int i = 0; i < WINDOW_SIZE + 1; i++) {      
+    //     if (i == imu_marg) {
+    //         continue;
+    //     }
+    //     shared_ptr<graph_optimization::VertexPose> vertexCam(new graph_optimization::VertexPose());
+    //     Eigen::VectorXd pose(7);
+    //     pose << para_Pose[i][0], para_Pose[i][1], para_Pose[i][2], para_Pose[i][3], para_Pose[i][4], para_Pose[i][5], para_Pose[i][6];
+    //     vertexCam->set_parameters(pose);
+    //     vertexCams_vec[i] = vertexCam;
+    //     problem.add_state_vertex(vertexCam);
+    //     pose_dim += vertexCam->local_dimension();
+
+    //     shared_ptr<graph_optimization::VertexMotion> vertexVB(new graph_optimization::VertexMotion());
+    //     Eigen::VectorXd vb(9);
+    //     vb << para_SpeedBias[i][0], para_SpeedBias[i][1], para_SpeedBias[i][2],
+    //         para_SpeedBias[i][3], para_SpeedBias[i][4], para_SpeedBias[i][5],
+    //         para_SpeedBias[i][6], para_SpeedBias[i][7], para_SpeedBias[i][8];
+    //     vertexVB->set_parameters(vb);
+    //     vertexVB_vec[i] = vertexVB;
+    //     problem.add_state_vertex(vertexVB);
+    //     pose_dim += vertexVB->local_dimension();
+    // }
+    // {
+    //     int i = imu_marg;
+    //     shared_ptr<graph_optimization::VertexPose> vertexCam(new graph_optimization::VertexPose());
+    //     Eigen::VectorXd pose(7);
+    //     pose << para_Pose[i][0], para_Pose[i][1], para_Pose[i][2], para_Pose[i][3], para_Pose[i][4], para_Pose[i][5], para_Pose[i][6];
+    //     vertexCam->set_parameters(pose);
+    //     vertexCams_vec[i] = vertexCam;
+    //     problem.add_state_vertex(vertexCam);
+    //     pose_dim += vertexCam->local_dimension();
+
+    //     shared_ptr<graph_optimization::VertexMotion> vertexVB(new graph_optimization::VertexMotion());
+    //     Eigen::VectorXd vb(9);
+    //     vb << para_SpeedBias[i][0], para_SpeedBias[i][1], para_SpeedBias[i][2],
+    //         para_SpeedBias[i][3], para_SpeedBias[i][4], para_SpeedBias[i][5],
+    //         para_SpeedBias[i][6], para_SpeedBias[i][7], para_SpeedBias[i][8];
+    //     vertexVB->set_parameters(vb);
+    //     vertexVB_vec[i] = vertexVB;
+    //     problem.add_state_vertex(vertexVB);
+    //     pose_dim += vertexVB->local_dimension();
+    // }
+
     // 相机的顶点(pose和motion), WINDOW_SIZE + 1 个
-    for (int i = 0; i < WINDOW_SIZE + 1; i++) {
+    for (int i = 0; i < WINDOW_SIZE + 1; i++) {      
         shared_ptr<graph_optimization::VertexPose> vertexCam(new graph_optimization::VertexPose());
         Eigen::VectorXd pose(7);
         pose << para_Pose[i][0], para_Pose[i][1], para_Pose[i][2], para_Pose[i][3], para_Pose[i][4], para_Pose[i][5], para_Pose[i][6];
         vertexCam->set_parameters(pose);
-        vertexCams_vec.push_back(vertexCam);
-        problem.add_vertex(vertexCam);
+        vertexCams_vec.emplace_back(vertexCam);
+        // problem.add_state_vertex(vertexCam);
         pose_dim += vertexCam->local_dimension();
 
         shared_ptr<graph_optimization::VertexMotion> vertexVB(new graph_optimization::VertexMotion());
@@ -895,10 +954,22 @@ void Estimator::problemSolve() {
             para_SpeedBias[i][3], para_SpeedBias[i][4], para_SpeedBias[i][5],
             para_SpeedBias[i][6], para_SpeedBias[i][7], para_SpeedBias[i][8];
         vertexVB->set_parameters(vb);
-        vertexVB_vec.push_back(vertexVB);
-        problem.add_vertex(vertexVB);
+        vertexVB_vec.emplace_back(vertexVB);
+        // problem.add_state_vertex(vertexVB);
         pose_dim += vertexVB->local_dimension();
     }
+
+    // 把状态顶点加入到problem中, 被margin的顶点放在最后
+    int imu_marg = (marginalization_flag == MARGIN_OLD) ? 0 : WINDOW_SIZE - 1; 
+    for (int i = 0; i < WINDOW_SIZE + 1; i++) {
+        // if (i == imu_marg) {
+        //     continue;
+        // }
+        problem.add_state_vertex(vertexCams_vec[i]);
+        problem.add_state_vertex(vertexVB_vec[i]);
+    }
+    // problem.add_state_vertex(vertexCams_vec[imu_marg]);
+    // problem.add_state_vertex(vertexVB_vec[imu_marg]);
 
     // 边: IMU预积分误差, WINDOW_SIZE个
     for (int i = 0; i < WINDOW_SIZE; i++) {
@@ -906,32 +977,120 @@ void Estimator::problemSolve() {
         if (pre_integrations[j]->get_sum_dt() > 10.0)     // 间隔太长的不考虑
             continue;
 
-        std::shared_ptr<graph_optimization::EdgeImu> imuEdge(new graph_optimization::EdgeImu(pre_integrations[j]));
+        std::shared_ptr<graph_optimization::EdgeImu> imu_edge(new graph_optimization::EdgeImu(pre_integrations[j]));
         std::vector<std::shared_ptr<graph_optimization::Vertex>> edge_vertex;
         edge_vertex.push_back(vertexCams_vec[i]);
         edge_vertex.push_back(vertexVB_vec[i]);
         edge_vertex.push_back(vertexCams_vec[j]);
         edge_vertex.push_back(vertexVB_vec[j]);
-        imuEdge->set_vertices(edge_vertex);
-        problem.add_edge(imuEdge);
+        imu_edge->set_vertices(edge_vertex);
+        problem.add_edge(imu_edge);
+
+        if (i == imu_marg || j == imu_marg) {
+            _marg_edges.emplace_back(imu_edge);
+        }
     }
 
     // 边: 重投影误差
     // 重投影误差的边所包含的顶点是会发生变化的, 随着old key frame被marginalize和new key frame被加入WINDOWS中
     vector<shared_ptr<graph_optimization::VertexInverseDepth>> vertexPt_vec;
+    MatXX information = project_sqrt_info_.transpose() * project_sqrt_info_;
     {
         unsigned int feature_index = 0;
         // 遍历每一个特征
+#ifdef USE_OPENMP
+        static vector<shared_ptr<graph_optimization::VertexInverseDepth>> vertex_vec[FeatureManager::NUM_THREADS];
+        static vector<shared_ptr<graph_optimization::EdgeReprojection>> edge_vec[FeatureManager::NUM_THREADS];
+        static vector<shared_ptr<graph_optimization::Vertex>> marg_landmarks_vec[FeatureManager::NUM_THREADS];
+        static vector<shared_ptr<graph_optimization::Edge>> marg_edges_vec[FeatureManager::NUM_THREADS];
+        for (auto &vertices : vertex_vec) {
+            vertices.clear();
+        }
+        for (auto &edges : edge_vec) {
+            edges.clear();
+        }
+        for (auto &landmarks : marg_landmarks_vec) {
+            landmarks.clear();
+        }
+        for (auto &edges : marg_edges_vec) {
+            edges.clear();
+        }
+#pragma omp parallel for num_threads(FeatureManager::NUM_THREADS)
+        for (size_t n = 0; n < f_manager.features_vector.size(); ++n) {
+            // 由于第WINDOW_SIZE帧是new frame, 其是否为key frame是不定的, 而第WINDOW_SIZE - 1帧是否为key frame也是不定的
+            // 第WINDOW_SIZE - 2帧才必定是key frame, 而landmark至少需被2个key frame观测到
+            // 所以landmark的start frame必须小于WINDOW_SIZE - 2才有意义
+            unsigned int i = omp_get_thread_num();
+            auto &&it_per_id = f_manager.features_vector[n];
+            if (it_per_id.second->is_suitable_to_reprojection()) {
+                Vec1 inv_d(1. / it_per_id.second->estimated_depth);
+                it_per_id.second->vertex_landmark->set_parameters(inv_d);
+                vertex_vec[i].emplace_back(it_per_id.second->vertex_landmark);
+
+                // 遍历所有的观测 (landmark所关联的frame), 计算视觉重投影误差
+                unsigned int imu_i = it_per_id.second->start_frame_id;
+                const Vector3d &pts_i = it_per_id.second->feature_per_frame[0].point;
+                for (unsigned int index = 1; index < it_per_id.second->feature_per_frame.size(); ++index) {
+                    unsigned int imu_j = imu_i + index;
+                    const Vector3d &pts_j = it_per_id.second->feature_per_frame[index].point;
+
+                    std::shared_ptr<graph_optimization::EdgeReprojection> edge(new graph_optimization::EdgeReprojection(pts_i, pts_j));
+                    std::vector<std::shared_ptr<graph_optimization::Vertex>> edge_vertex;
+                    edge->add_vertex(it_per_id.second->vertex_landmark);
+                    edge->add_vertex(vertexCams_vec[imu_i]);
+                    edge->add_vertex(vertexCams_vec[imu_j]);
+                    edge->add_vertex(vertexExt);
+
+                    edge->set_information(information);
+                    // edge->set_loss_function(lossfunction);
+
+                    edge_vec[i].emplace_back(edge);
+                    if (imu_j == imu_marg) {
+                        marg_edges_vec[i].emplace_back(edge);
+                        marg_landmarks_vec[i].emplace_back(it_per_id.second->vertex_landmark);
+                    }
+                    if (imu_i == imu_marg) {
+                        marg_edges_vec[i].emplace_back(edge);
+                    }
+                }
+                if (imu_i == imu_marg) {
+                    marg_landmarks_vec[i].emplace_back(it_per_id.second->vertex_landmark);
+                }
+            }
+        }
+        // std::cout << "imu_marg = " << imu_marg << std::endl;
+
+        for (auto &vertices : vertex_vec) {
+            for (auto &vertex : vertices) {
+                problem.add_landmark_vertex(vertex);
+            }
+        }
+        for (auto &edges : edge_vec) {
+            for (auto &edge : edges) {
+                problem.add_edge(edge);
+            }
+        }
+        for (auto &landmarks : marg_landmarks_vec) {
+            for (auto &landmark : landmarks) {
+                _marg_landmarks.emplace_back(landmark);
+            }
+        }
+        for (auto &edges : marg_edges_vec) {
+            for (auto &edge : edges) {
+                _marg_edges.emplace_back(edge);
+            }
+        }
+#else
         for (auto &it_per_id : f_manager.features_map) { // 遍历每个landmark
             // 由于第WINDOW_SIZE帧是new frame, 其是否为key frame是不定的, 而第WINDOW_SIZE - 1帧是否为key frame也是不定的
             // 第WINDOW_SIZE - 2帧才必定是key frame, 而landmark至少需被2个key frame观测到
             // 所以landmark的start frame必须小于WINDOW_SIZE - 2才有意义
             if (it_per_id.second.is_suitable_to_reprojection()) {
-                shared_ptr<graph_optimization::VertexInverseDepth> verterxPoint(new graph_optimization::VertexInverseDepth());
+                // shared_ptr<graph_optimization::VertexInverseDepth> vertexPoint(new graph_optimization::VertexInverseDepth());
                 Vec1 inv_d(para_Feature[feature_index++][0]);
-                verterxPoint->set_parameters(inv_d);
-                problem.add_vertex(verterxPoint);
-                vertexPt_vec.push_back(verterxPoint);
+                it_per_id.second.vertex_landmark->set_parameters(inv_d);
+                problem.add_landmark_vertex(it_per_id.second.vertex_landmark);
+                vertexPt_vec.push_back(it_per_id.second.vertex_landmark);
 
                 // 遍历所有的观测 (landmark所关联的frame), 计算视觉重投影误差
                 unsigned int imu_i = it_per_id.second.start_frame_id;
@@ -942,19 +1101,31 @@ void Estimator::problemSolve() {
 
                     std::shared_ptr<graph_optimization::EdgeReprojection> edge(new graph_optimization::EdgeReprojection(pts_i, pts_j));
                     std::vector<std::shared_ptr<graph_optimization::Vertex>> edge_vertex;
-                    edge_vertex.push_back(verterxPoint);
+                    edge_vertex.push_back(it_per_id.second.vertex_landmark);
                     edge_vertex.push_back(vertexCams_vec[imu_i]);
                     edge_vertex.push_back(vertexCams_vec[imu_j]);
                     edge_vertex.push_back(vertexExt);
 
                     edge->set_vertices(edge_vertex);
-                    edge->set_information(project_sqrt_info_.transpose() * project_sqrt_info_);
+                    edge->set_information(information);
 
                     // edge->set_loss_function(lossfunction);
                     problem.add_edge(edge);
+
+                    if (imu_j == imu_marg) {
+                        marg_edges.emplace_back(edge);
+                        _marg_landmarks.emplace_back(it_per_id.second->vertex_landmark);
+                    }
+                    if (imu_i == imu_marg) {
+                        _marg_edges.emplace_back(edge);
+                    }
+                }
+                if (imu_i == imu_marg) {
+                    _marg_landmarks.emplace_back(it_per_id.second->vertex_landmark);
                 }
             }
         }
+#endif
     }
 
     // 先验
@@ -965,11 +1136,14 @@ void Estimator::problemSolve() {
             //            Hprior_.block(0,0,6,Hprior_.cols()).setZero();
             //            Hprior_.block(0,0,Hprior_.rows(),6).setZero();
 
-            problem.set_h_prior(Hprior_); // 告诉这个 problem
+//            problem.set_h_prior(Hprior_); // 告诉这个 problem
+//            problem.set_b_prior(bprior_);
+//            // problem.set_err_prior(errprior_);
+//            // problem.set_Jt_prior(Jprior_inv_);
+//            problem.extend_prior_hessian_size(15); // 但是这个 prior 还是之前的维度，需要扩展下装新的pose
+
+            problem.set_h_prior(Hprior_);
             problem.set_b_prior(bprior_);
-            // problem.set_err_prior(errprior_);
-            // problem.set_Jt_prior(Jprior_inv_);
-            problem.extend_prior_hessian_size(15); // 但是这个 prior 还是之前的维度，需要扩展下装新的pose
         }
     }
 
@@ -1004,10 +1178,20 @@ void Estimator::problemSolve() {
     }
 
     // 遍历每一个特征
+#ifdef USE_OPENMP
+    unsigned int feature_index = 0;
+    for (size_t n = 0; n < f_manager.features_vector.size(); ++n) {
+        auto &&it_per_id = f_manager.features_vector[n];
+        if (it_per_id.second->is_suitable_to_reprojection()) {
+            para_Feature[feature_index++][0] = it_per_id.second->vertex_landmark->get_parameters()[0];
+        }
+    }
+#else    
     for (int i = 0; i < vertexPt_vec.size(); ++i) {
         VecX f = vertexPt_vec[i]->get_parameters();
         para_Feature[i][0] = f[0];
     }
+#endif
 }
 
 void Estimator::backendOptimization() {
@@ -1076,9 +1260,7 @@ void Estimator::backendOptimization() {
 
 void Estimator::slideWindow() {
     TicToc t_margin;
-#ifdef USE_OPENMP
-    f_manager.update_features_vector();
-#endif
+
     if (marginalization_flag == MARGIN_OLD) {
         double t_0 = Headers[0];
         back_R0 = Rs[0];

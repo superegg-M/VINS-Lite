@@ -125,7 +125,7 @@ namespace graph_optimization {
 
                     current_chi2 = new_chi2;
                     update_jacobian();
-                    update_hessian();
+                    // update_hessian();
                 } else {
                     is_good_step = false;
                     ++failure_cnt;
@@ -141,7 +141,7 @@ namespace graph_optimization {
                     }
                 }
             } while (!is_good_step && !is_bad_to_stop && !is_good_to_stop);
-
+            update_hessian();
             std::cout << "iter: " << iter << " , get_chi2 = " << current_chi2 << " , delta = " << _delta << std::endl;
         } while (iter < iterations && !is_bad_to_stop && !is_good_to_stop);
 

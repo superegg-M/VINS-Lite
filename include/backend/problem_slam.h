@@ -12,9 +12,15 @@ namespace graph_optimization {
     public:
         ProblemSLAM() = default;
 
-        bool add_vertex(const std::shared_ptr<Vertex>& vertex) override;
+        bool add_state_vertex(const std::shared_ptr<Vertex>& vertex);
+        bool add_landmark_vertex(const std::shared_ptr<Vertex>& vertex);
         bool remove_vertex(const std::shared_ptr<Vertex>& vertex) override;
+        
         bool marginalize(const std::shared_ptr<Vertex>& vertex_pose, const std::shared_ptr<Vertex>& vertex_motion); ///< 边缘化pose和与之相关的edge
+        bool marginalize(const std::shared_ptr<Vertex>& vertex_pose, 
+                         const std::shared_ptr<Vertex>& vertex_motion,
+                         const std::vector<std::shared_ptr<Vertex>> &vertices_landmark,
+                         const std::vector<std::shared_ptr<Edge>> &edges);
 
     public:
         static bool is_pose_vertex(const std::shared_ptr<Vertex>& v);   ///< 判断一个顶点是否为Pose顶点

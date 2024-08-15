@@ -28,8 +28,8 @@ namespace graph_optimization {
             TMP
         };
         typedef unsigned long ulong;
-//    typedef std::unordered_map<unsigned long, std::shared_ptr<Vertex>> HashVertex;
-        typedef std::map<unsigned long, std::shared_ptr<Vertex>> HashVertex;
+        typedef std::unordered_map<unsigned long, std::shared_ptr<Vertex>> HashVertex;
+        // typedef std::map<unsigned long, std::shared_ptr<Vertex>> HashVertex;
         typedef std::unordered_map<unsigned long, std::shared_ptr<Edge>> HashEdge;
         typedef std::unordered_multimap<unsigned long, std::shared_ptr<Edge>> HashVertexIdToEdge;
 
@@ -63,11 +63,15 @@ namespace graph_optimization {
 
         void test_marginalize();
 
+    public:
+        MatXX &h_prior() { return _h_prior; }
+        VecX &b_prior() { return _b_prior; }
+
     protected:
         virtual void initialize_ordering();    ///< 设置各顶点的ordering_index
         virtual bool check_ordering();  ///< 检查ordering是否正确
-        void update_states(const VecX &delta_x);    ///< x_bp = x, x = x + Δx, b_prior_bp = b_prior, b_prior = b_prior - H_prior * Δx
-        void rollback_states(const VecX &delta_x);  ///< x = x_bp, b_prior = b_prior_bp
+        virtual void update_states(const VecX &delta_x);    ///< x_bp = x, x = x + Δx, b_prior_bp = b_prior, b_prior = b_prior - H_prior * Δx
+        virtual void rollback_states(const VecX &delta_x);  ///< x = x_bp, b_prior = b_prior_bp
         virtual void update_prior(const VecX &delta_x); ///< b_prior_bp = b_prior, b_prior = b_prior - H_prior * Δx; 在update_states()中运行
         void update_residual(); ///< 计算每条边的残差;      运行顺序必须遵循: update_state -> update_residual
         void update_jacobian(); ///< 计算每条边的残差;      运行顺序必须遵循: update_residual -> update_jacobian
@@ -100,7 +104,7 @@ namespace graph_optimization {
 
     protected:
         bool _debug = false;
-        SolverType _solver_type {SolverType::DOG_LEG};
+        SolverType _solver_type {SolverType::LEVENBERG_MARQUARDT};
 
         double _t_residual_cost = 0.;
         double _t_chi2_cost = 0.;
@@ -126,7 +130,8 @@ namespace graph_optimization {
         MatXX _jt_prior_inv;
         VecX _err_prior;
 
-        HashVertex _vertices;   ///< 所有的顶点
+        // HashVertex _vertices;   ///< 所有的顶点
+        std::vector<std::pair<unsigned long, std::shared_ptr<Vertex>>> _vertices;
         HashEdge _edges;    ///< 所有的边
         HashVertexIdToEdge _vertex_to_edge;     ///< pair(顶点id, 与该顶点相连的所有边)
         HashVertex _vertices_marg;  ///< 需要被边缘化的顶点
@@ -144,7 +149,7 @@ namespace graph_optimization {
         double _lambda_max {1e6};
 
         // Dog leg
-        double _delta {100.};
+        double _delta {1.};
         double _delta_min {1e-6};
         double _delta_max {1e6};
     };

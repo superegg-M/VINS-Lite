@@ -95,7 +95,8 @@ namespace graph_optimization {
                     // 鲁棒核函数会修改残差和信息矩阵，如果没有设置 robust cost function，就会返回原来的
                     double drho;
                     MatXX robustInfo(edge.second->information().rows(),edge.second->information().cols());
-                    edge.second->robust_information(drho,robustInfo);
+                    VecX robustRes;
+                    edge.second->robust_information(drho,robustInfo,robustRes);
 
                     MatXX JtW = jacobian_i.transpose() * robustInfo;
                     for (size_t j = i; j < verticies.size(); ++j) {

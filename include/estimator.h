@@ -164,5 +164,7 @@ class Estimator
     graph_optimization::ProblemSLAM _problem;
     vector<shared_ptr<graph_optimization::VertexPose>> _vertex_pose_vec;
     vector<shared_ptr<graph_optimization::VertexMotion>> _vertex_motion_vec;
+    vector<shared_ptr<graph_optimization::Vertex>> _marg_landmarks;
+    vector<shared_ptr<graph_optimization::Edge>> _marg_edges;
     unsigned int _state_dim {0};
 };

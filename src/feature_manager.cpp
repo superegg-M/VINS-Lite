@@ -73,7 +73,7 @@ bool FeatureManager::add_feature_and_check_latest_frame_parallax(unsigned int fr
      * */
     for (auto &it_per_id : features_map) {
         if (it_per_id.second.start_frame_id + 2 <= frame_count &&
-            it_per_id.second.start_frame_id + it_per_id.second.get_end_frame_id() + 1 >= frame_count) {
+            it_per_id.second.get_end_frame_id() + 1 >= frame_count) {
             parallax_sum += compensated_parallax2(it_per_id.second, frame_count);
             ++parallax_num;
             // std::cout << "Case 0: frame_count = " << frame_count << ", start_frame_id = " << it_per_id.start_frame_id << ", end_frame = " << (it_per_id.start_frame_id + int(it_per_id.feature_per_frame.size()) - 1) << std::endl;
@@ -508,8 +508,12 @@ double FeatureManager::compensated_parallax2(const FeaturePerId &it_per_id, unsi
 #ifdef USE_OPENMP
 void FeatureManager::update_features_vector() {
     features_vector.clear();
+    activate_features_num = 0;
     for (auto &feature : features_map) {
         features_vector.emplace_back(feature.first, &feature.second);
+        if (feature.second.is_suitable_to_reprojection()) {
+            ++activate_features_num;
+        }
     }
 }
 #endif

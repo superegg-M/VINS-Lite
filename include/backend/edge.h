@@ -93,18 +93,20 @@ namespace graph_optimization {
         const std::vector<MatXX> &jacobians() const { return _jacobians; }
 
         /// 设置信息矩阵, information_ = sqrt_Omega = w
-        void set_information(const MatXX &information) { _information = information; }
+        void set_information(const MatXX &information) { _information = information; _use_info = true; }
 
         /// 返回信息矩阵
-        MatXX information() const { return _information; }
+        const MatXX &information() const { return _information; }
 
-        void robust_information(double &drho, MatXX &info) const;
+        void robust_information(double &drho, MatXX &info, VecX &res) const;
 
         /// 设置观测信息
         void set_observation(const VecX &observation) { _observation = observation; }
 
         /// 返回观测信息
-        VecX observation() const { return _observation; }
+        const VecX &observation() const { return _observation; }
+
+        bool is_use_info() const { return _use_info; }
 
         /// 检查边的信息是否全部设置
         bool check_valid();
@@ -114,6 +116,7 @@ namespace graph_optimization {
 //        void set_ordering_id(unsigned long id) { _ordering_id = id; };
 
     protected:
+        bool _use_info = false;
         unsigned long _id;  ///< edge id
 //        unsigned long _ordering_id;   ///< edge id in problem
         std::vector<std::string> _vertices_types;  ///< 各顶点类型信息，用于debug

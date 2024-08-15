@@ -22,21 +22,21 @@ namespace graph_optimization {
     }
 
     bool Problem::add_vertex(const std::shared_ptr<Vertex>& vertex) {
-        if (_vertices.find(vertex->id()) != _vertices.end()) {
-            // LOG(WARNING) << "Vertex " << vertex->Id() << " has been added before";
-            return false;
-        }
-        _vertices.insert(pair<unsigned long, shared_ptr<Vertex>>(vertex->id(), vertex));
+        // if (_vertices.find(vertex->id()) != _vertices.end()) {
+        //     // LOG(WARNING) << "Vertex " << vertex->Id() << " has been added before";
+        //     return false;
+        // }
+        _vertices.emplace_back(vertex->id(), vertex);
 
         return true;
     }
 
     bool Problem::remove_vertex(const std::shared_ptr<Vertex>& vertex) {
         // 如果顶点不在顶点map中, 则返回false
-        if (_vertices.find(vertex->id()) == _vertices.end()) {
-            // LOG(WARNING) << "The vertex " << vertex->Id() << " is not in the problem!" << endl;
-            return false;
-        }
+        // if (_vertices.find(vertex->id()) == _vertices.end()) {
+        //     // LOG(WARNING) << "The vertex " << vertex->Id() << " is not in the problem!" << endl;
+        //     return false;
+        // }
 
         // 若删除顶点, 则需要把顶点所连接的edge也删除
         auto &&edges = get_connected_edges(vertex);
@@ -45,7 +45,7 @@ namespace graph_optimization {
         }
 
         vertex->set_ordering_id(-1);      // used to debug
-        _vertices.erase(vertex->id());
+        // _vertices.erase(vertex->id());
         _vertex_to_edge.erase(vertex->id());
 
         return true;
@@ -159,36 +159,47 @@ namespace graph_optimization {
             bs[i] = VecX::Zero(size);
         }
 
+        TicToc t_tmp[NUM_THREADS];
+        double t_cost[NUM_THREADS] {0};
+
         // 遍历每个残差，并计算他们的雅克比，得到最后的 H = J^T * J
 //        omp_set_num_threads(NUM_THREADS);
 #pragma omp parallel for num_threads(NUM_THREADS)
         for (size_t n = 0; n < _edges_vector.size(); ++n) {//for (auto &edge: edges) {
             unsigned int index = omp_get_thread_num();
 
+            t_tmp[index].tic();
             auto &&edge = _edges_vector[n];
             auto &&jacobians = edge.second->jacobians();
             auto &&verticies = edge.second->vertices();
             assert(jacobians.size() == verticies.size());
+            t_cost[index] += t_tmp[index].toc();
+
+            // 计算edge的鲁棒权重
+            double drho;
+            MatXX robust_information;
+            VecX robust_residual;
+            edge.second->robust_information(drho, robust_information, robust_residual);
             for (size_t i = 0; i < verticies.size(); ++i) {
+                t_tmp[index].tic();
                 auto &&v_i = verticies[i];
                 if (v_i->is_fixed()) continue;    // Hessian 里不需要添加它的信息，也就是它的雅克比为 0
 
                 auto &&jacobian_i = jacobians[i];
                 ulong index_i = v_i->ordering_id();
                 ulong dim_i = v_i->local_dimension();
-
-                double drho;
-                MatXX robust_information(edge.second->information().rows(),edge.second->information().cols());
-                edge.second->robust_information(drho, robust_information);
+                t_cost[index] += t_tmp[index].toc();
 
                 MatXX JtW = jacobian_i.transpose() * robust_information;
                 for (size_t j = i; j < verticies.size(); ++j) {
+                    t_tmp[index].tic();
                     auto &&v_j = verticies[j];
                     if (v_j->is_fixed()) continue;
 
                     auto &&jacobian_j = jacobians[j];
                     ulong index_j = v_j->ordering_id();
                     ulong dim_j = v_j->local_dimension();
+                    t_cost[index] += t_tmp[index].toc();
 
 //                    assert(v_j->ordering_id() != -1);
                     MatXX hessian = JtW * jacobian_j;   // TODO: 这里能继续优化, 因为J'*W*J也是对称矩阵
@@ -199,13 +210,15 @@ namespace graph_optimization {
                         Hs[index].block(index_j, index_i, dim_j, dim_i).noalias() += hessian.transpose();
                     }
                 }
-                bs[index].segment(index_i, dim_i).noalias() -= drho * jacobian_i.transpose() * edge.second->information() * edge.second->residual();
+                bs[index].segment(index_i, dim_i).noalias() -= jacobian_i.transpose() * robust_residual;
             }
         }
 
         for (unsigned int i = 0; i < NUM_THREADS; ++i) {
             H += Hs[i];
             b += bs[i];
+
+            // _t_hessian_cost += t_cost[i];
         }
 #else
         // 遍历每个残差，并计算他们的雅克比，得到最后的 H = J^T * J
@@ -213,6 +226,12 @@ namespace graph_optimization {
             auto &&jacobians = edge.second->jacobians();
             auto &&verticies = edge.second->vertices();
             assert(jacobians.size() == verticies.size());
+
+            // 计算edge的鲁棒权重
+            double drho;
+            MatXX robust_information;
+            VecX robust_residual;
+            edge.second->robust_information(drho, robust_information, robust_residual);
             for (size_t i = 0; i < verticies.size(); ++i) {
                 auto &&v_i = verticies[i];
                 if (v_i->is_fixed()) continue;    // Hessian 里不需要添加它的信息，也就是它的雅克比为 0
@@ -220,10 +239,6 @@ namespace graph_optimization {
                 auto &&jacobian_i = jacobians[i];
                 ulong index_i = v_i->ordering_id();
                 ulong dim_i = v_i->local_dimension();
-
-                double drho;
-                MatXX robust_information(edge.second->information().rows(),edge.second->information().cols());
-                edge.second->robust_information(drho, robust_information);
 
                 MatXX JtW = jacobian_i.transpose() * robust_information;
                 for (size_t j = i; j < verticies.size(); ++j) {
@@ -243,7 +258,7 @@ namespace graph_optimization {
                         H.block(index_j, index_i, dim_j, dim_i).noalias() += hessian.transpose();
                     }
                 }
-                b.segment(index_i, dim_i).noalias() -= drho * jacobian_i.transpose() * edge.second->information() * edge.second->residual();
+                b.segment(index_i, dim_i).noalias() -= jacobian_i.transpose() * robust_residual;
             }
 
         }
@@ -323,6 +338,12 @@ namespace graph_optimization {
             auto &&jacobians = edge.second->jacobians();
             auto &&verticies = edge.second->vertices();
             assert(jacobians.size() == verticies.size());
+
+            // 计算edge的鲁棒权重
+            double drho;
+            MatXX robust_information;
+            VecX robust_residual;
+            edge.second->robust_information(drho, robust_information, robust_residual);
             for (size_t i = 0; i < verticies.size(); ++i) {
                 auto &&v_i = verticies[i];
                 if (v_i->is_fixed()) continue;    // Hessian 里不需要添加它的信息，也就是它的雅克比为 0
@@ -330,10 +351,6 @@ namespace graph_optimization {
                 auto &&jacobian_i = jacobians[i];
                 ulong index_i = v_i->ordering_id();
                 ulong dim_i = v_i->local_dimension();
-
-                double drho;
-                MatXX robust_information(edge.second->information().rows(),edge.second->information().cols());
-                edge.second->robust_information(drho, robust_information);
 
                 VecX Jx = jacobian_i * x.segment(index_i, dim_i);
                 norm2 += Jx.transpose() * robust_information * Jx;
@@ -344,6 +361,12 @@ namespace graph_optimization {
             auto &&jacobians = edge.second->jacobians();
             auto &&verticies = edge.second->vertices();
             assert(jacobians.size() == verticies.size());
+
+            // 计算edge的鲁棒权重
+            double drho;
+            MatXX robust_information;
+            VecX robust_residual;
+            edge.second->robust_information(drho, robust_information, robust_residual);
             for (size_t i = 0; i < verticies.size(); ++i) {
                 auto &&v_i = verticies[i];
                 if (v_i->is_fixed()) continue;    // Hessian 里不需要添加它的信息，也就是它的雅克比为 0
@@ -352,9 +375,7 @@ namespace graph_optimization {
                 ulong index_i = v_i->ordering_id();
                 ulong dim_i = v_i->local_dimension();
 
-                double drho;
-                MatXX robust_information(edge.second->information().rows(),edge.second->information().cols());
-                edge.second->robust_information(drho, robust_information);
+                
 
                 VecX Jx = jacobian_i * x.segment(index_i, dim_i);
                 norm2 += Jx.transpose() * robust_information * Jx;
@@ -498,9 +519,9 @@ namespace graph_optimization {
         }
 #else
         for (auto &vertex: _vertices) {
-            ulong idx = vertex.second->ordering_id();
-            ulong dim = vertex.second->local_dimension();
-            VecX delta = delta_x.segment(idx, dim);
+            // ulong idx = vertex.second->ordering_id();
+            // ulong dim = vertex.second->local_dimension();
+            // VecX delta = delta_x.segment(idx, dim);
 
 //            // 之前的增量加了后使得损失函数增加了，我们应该不要这次迭代结果，所以把之前加上的量减去。
 //            vertex.second->plus(-delta);

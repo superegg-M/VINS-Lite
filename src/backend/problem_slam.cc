@@ -17,8 +17,302 @@ namespace graph_optimization {
     using namespace std;
 
     /*
-        * marginalize 所有和 frame 相连的 edge: imu factor, projection factor
-        * */
+    * marginalize 所有和 frame 相连的 edge: imu factor, projection factor
+    * 假设vertex_pose和vertex_motion, 分别排序在vertex的倒数第二与倒数第一位
+    * */
+    bool ProblemSLAM::marginalize(const std::shared_ptr<Vertex>& vertex_pose, 
+                                  const std::shared_ptr<Vertex>& vertex_motion,
+                                  const std::vector<std::shared_ptr<Vertex>> &vertices_landmark,
+                                  const std::vector<std::shared_ptr<Edge>> &edges) {                 
+        // std::vector<shared_ptr<Edge>> marginalized_edges = get_connected_edges(vertex_pose);
+        // int num_reproj = 0, num_integ = 0;   
+        // for (auto &edge: marginalized_edges) {
+        //     if (edge->type_info() == "EdgeReprojection") {
+        //         ++num_reproj;
+        //     }
+        //     if (edge->type_info() == "EdgeImu") {
+        //         ++num_integ;
+        //     }
+        // }
+        // std::cout << "marginalized_edges: " << marginalized_edges.size() << ", num_reproj = " << num_reproj << ", num_integ = " << num_integ << std::endl;
+        // num_reproj = 0, num_integ = 0;  
+        // int error_pts = 0;  
+        // for (auto &edge: edges) {
+        //     if (edge->type_info() == "EdgeReprojection") {
+        //         ++num_reproj;
+        //     }
+        //     if (edge->type_info() == "EdgeImu") {
+        //         ++num_integ;
+        //     }
+        //     if (_edges.find(edge->id()) == _edges.end()) {
+        //         ++error_pts;
+        //     }
+        // }
+        // std::cout << "edges: " << edges.size() << ", num_reproj = " << num_reproj << ", num_integ = " << num_integ << ", error_pts = " << error_pts << std::endl;
+
+        // 计算所需marginalize的edge的hessian
+        ulong state_dim = _ordering_poses;
+        ulong landmark_size = vertices_landmark.size();
+        ulong cols = state_dim + landmark_size;
+
+        // 为H加上eps, 避免出现对角线元素为0的情况
+        MatXX h_state_landmark = VecX::Constant(cols, 1, 1e-6).asDiagonal();
+        VecX b_state_landmark(VecX::Zero(cols));
+
+        // std::cout << "111111111111111111111111" << std::endl;
+
+        // 修改landmark的ordering_id, 方便hessian的计算
+        for (unsigned i = 0; i < landmark_size; ++i) {
+            vertices_landmark[i]->set_ordering_id(state_dim + i);
+            // std::cout << "landmark dim = " << vertices_landmark[i]->local_dimension() << std::endl;
+        }
+
+        // std::cout << "landmark_size = " << landmark_size << ", state_dim = " << state_dim << std::endl;
+
+#ifdef USE_OPENMP
+        MatXX Hs[NUM_THREADS];       ///< Hessian矩阵
+        VecX bs[NUM_THREADS];       ///< 负梯度
+        for (unsigned int i = 0; i < NUM_THREADS; ++i) {
+            Hs[i] = MatXX::Zero(cols, cols);
+            bs[i] = VecX::Zero(cols);
+        }
+
+#pragma omp parallel for num_threads(NUM_THREADS)
+        for (size_t n = 0; n < edges.size(); ++n) {
+            unsigned int index = omp_get_thread_num();
+
+            auto &edge = edges[n];
+            auto &&jacobians = edge->jacobians();
+            auto &&vertices = edge->vertices();
+            assert(jacobians.size() == vertices.size());
+
+            // 计算edge的鲁棒权重
+            double drho;
+            MatXX robust_information;
+            VecX robust_residual;
+            edge->robust_information(drho, robust_information, robust_residual);
+// std::cout << "aaaaaaaaaaaaaaaaaaaaaa" << std::endl;
+            for (size_t i = 0; i < vertices.size(); ++i) {
+                auto &&v_i = vertices[i];
+                if (v_i->is_fixed()) continue;
+
+                auto &&jacobian_i = jacobians[i];
+                ulong index_i = v_i->ordering_id();
+                ulong dim_i = v_i->local_dimension();
+
+                if (jacobian_i.rows() == 0) {
+                    continue;
+                }
+
+                MatXX JtW = jacobian_i.transpose() * robust_information;
+                // std::cout << "bbbbbbbbbbbbbbbbbbbbbbbb" << std::endl;
+                for (size_t j = i; j < vertices.size(); ++j) {
+                    auto &&v_j = vertices[j];
+                    if (v_j->is_fixed()) continue;
+
+                    auto &&jacobian_j = jacobians[j];
+                    ulong index_j = v_j->ordering_id();
+                    ulong dim_j = v_j->local_dimension();
+
+                    if (jacobian_j.rows() == 0) {
+                        continue;
+                    }
+
+// std::cout << "JtW: " << JtW.rows() << ", " << JtW.cols() << ", jacobian_j: " << jacobian_j.rows() << ", " << jacobian_j.cols() << std::endl;
+                    MatXX hessian = JtW * jacobian_j;
+// std::cout << "hessian: " << hessian.rows() << ", " << hessian.cols() << std::endl;
+// std::cout << "block: " << dim_i << ", " << dim_j << std::endl;
+//                    assert(hessian.rows() == v_i->local_dimension() && hessian.cols() == v_j->local_dimension());
+                    // 所有的信息矩阵叠加起来
+                    Hs[index].block(index_i, index_j, dim_i, dim_j).noalias() += hessian;
+                    // std::cout << "dddddddddddddddddddddddd" << std::endl;
+                    if (j != i) {
+                        // 对称的下三角
+                        Hs[index].block(index_j, index_i, dim_j, dim_i).noalias() += hessian.transpose();
+                    }
+                }
+// std::cout << "robust_residual: " << robust_residual.rows() << ", " << robust_residual.cols() << ", jacobian_i.transpose(): " << jacobian_i.transpose().rows() << ", " << jacobian_i.transpose().cols() << std::endl;
+                bs[index].segment(index_i, dim_i).noalias() -= jacobian_i.transpose() * robust_residual;
+                // std::cout << "eeeeeeeeeeeeeeeeeee" << std::endl;
+            }
+            // std::cout << "ffffffffffffff" << std::endl;
+        }
+
+        for (unsigned int i = 0; i < NUM_THREADS; ++i) {
+            h_state_landmark += Hs[i];
+            b_state_landmark += bs[i];
+        }
+#else
+        for (size_t n = 0; n < edges.size(); ++n) {
+            auto &edge = edges[n];
+            // 若曾经solve problem, 则无需再次计算
+            // edge->compute_residual();
+            // edge->compute_jacobians();
+            auto &&jacobians = edge->jacobians();
+            auto &&vertices = edge->vertices();
+
+            assert(jacobians.size() == vertices.size());
+
+            // 计算edge的鲁棒权重
+            double drho;
+            MatXX robust_information;
+            VecX robust_residual;
+            edge->robust_information(drho, robust_information, robust_residual);
+
+            for (size_t i = 0; i < vertices.size(); ++i) {
+                auto v_i = vertices[i];
+                if (v_i->is_fixed()) continue;
+
+                auto &&jacobian_i = jacobians[i];
+                ulong index_i = v_i->ordering_id();
+                ulong dim_i = v_i->local_dimension();
+// std::cout << "name: " << edge->type_info() << std::endl;
+// std::cout << "v_i: " << v_i->type_info() << ", " << v_i->ordering_id() << std::endl;
+// std::cout << "jacobian_i.transpose(): " << jacobian_i.transpose().rows() << ", " << jacobian_i.transpose().cols() << ", robust_information: " << robust_information.rows() << ", " << robust_information.cols() << std::endl;
+                if (jacobian_i.rows() == 0) {
+                    continue;
+                }
+
+                MatXX JtW = jacobian_i.transpose() * robust_information;
+                for (size_t j = i; j < vertices.size(); ++j) {
+                    auto &&v_j = vertices[j];
+                    if (v_j->is_fixed()) continue;
+
+                    auto &&jacobian_j = jacobians[j];
+                    ulong index_j = v_j->ordering_id();
+                    ulong dim_j = v_j->local_dimension();
+// std::cout << "JtW: " << JtW.rows() << ", " << JtW.cols() << ", jacobian_j: " << jacobian_j.rows() << ", " << jacobian_j.cols() << std::endl;
+                    if (jacobian_j.rows() == 0) {
+                        continue;
+                    }
+
+                    MatXX hessian = JtW * jacobian_j;
+
+                    assert(hessian.rows() == v_i->local_dimension() && hessian.cols() == v_j->local_dimension());
+                    // 所有的信息矩阵叠加起来
+                    h_state_landmark.block(index_i, index_j, dim_i, dim_j) += hessian;
+                    if (j != i) {
+                        // 对称的下三角
+                        h_state_landmark.block(index_j, index_i, dim_j, dim_i) += hessian.transpose();
+                    }
+                }
+// std::cout << "jacobian_i.transpose(): " << jacobian_i.transpose().rows() << ", " << jacobian_i.transpose().cols() << ", robust_residual: " << robust_residual.rows() << ", " << robust_residual.cols() << std::endl;
+
+                b_state_landmark.segment(index_i, dim_i) -= jacobian_i.transpose() * robust_residual;
+            }
+        }
+#endif
+
+        // marginalize与边连接的landmark
+        MatXX h_state_schur;
+        VecX b_state_schur;
+        if (landmark_size > 0) {
+            // Hll
+            VecX Hll = h_state_landmark.block(state_dim, state_dim, landmark_size, landmark_size).diagonal();
+            // 由于叠加了eps, 所以能够保证Hll可逆
+            VecX Hll_inv = Hll.array().inverse();
+
+            // Hll^-1 * Hsl^T
+            MatXX temp_H = Hll_inv.asDiagonal() * h_state_landmark.block(state_dim, 0, landmark_size, state_dim);  
+            // Hll^-1 * bl
+            VecX temp_b = Hll_inv.cwiseProduct(b_state_landmark.tail(landmark_size));   
+
+            // (Hss - Hsl * Hll^-1 * Hls) * xs = bs - Hsl * Hll^-1 * bl
+#ifdef USE_OPENMP
+            // Hss - Hsl * Hll^-1 * Hls
+            h_state_schur = MatXX::Zero(state_dim, state_dim);
+#pragma omp parallel for num_threads(NUM_THREADS)
+            for (ulong i = 0; i < state_dim; ++i) {
+                h_state_schur(i, i) = -temp_H.col(i).dot(h_state_landmark.block(state_dim, 0, landmark_size, state_dim).col(i));
+                for (ulong j = i + 1; j < state_dim; ++j) {
+                    h_state_schur(i, j) = -temp_H.col(j).dot(h_state_landmark.block(state_dim, 0, landmark_size, state_dim).col(i));
+                    h_state_schur(j, i) = h_state_schur(i, j);
+                }
+            }
+            h_state_schur += h_state_landmark.block(0, 0, state_dim, state_dim);
+#else
+            // Hss - Hsl * Hll^-1 * Hls
+            h_state_schur = h_state_landmark.block(0, 0, state_dim, state_dim) - h_state_landmark.block(0, state_dim, state_dim, landmark_size) * temp_H;
+#endif
+            // bs - Hsl * Hll^-1 * bl
+            b_state_schur = b_state_landmark.head(state_dim) - temp_H.transpose() * b_state_landmark.tail(landmark_size);
+        } else {
+            h_state_schur = h_state_landmark;
+            b_state_schur = b_state_landmark;
+        }
+
+        // 叠加之前的先验
+        if(_h_prior.rows() > 0) {
+            h_state_schur += _h_prior;
+            b_state_schur += _b_prior;
+        } else {
+            _h_prior = MatXX::Zero(state_dim, state_dim);
+            _b_prior = VecX::Zero(state_dim, 1);
+        }
+
+        // Marginalize掉pose和motion
+        ulong marginalized_size = vertex_pose->local_dimension() + vertex_motion->local_dimension();
+        ulong reserve_size = state_dim - marginalized_size;
+        MatXX Hmr = h_state_schur.block(reserve_size, 0, marginalized_size, reserve_size);
+
+        MatXX temp_H(MatXX::Zero(marginalized_size, reserve_size));  // Hmm^-1 * Hrm^T
+        VecX temp_b(VecX::Zero(marginalized_size, 1));   // Hmm^-1 * bm
+
+        if (marginalized_size == 1) {
+            unsigned index = reserve_size;
+            if (h_state_schur(index, index) > 1e-12) {
+                temp_H = Hmr / h_state_schur(index, index);
+                temp_b = b_state_schur.tail(marginalized_size) / h_state_schur(index, index);
+            } else {
+                temp_H.setZero();
+                temp_b.setZero();
+            }
+            
+        } else {
+            auto Hmm_ldlt = h_state_schur.block(reserve_size, reserve_size, marginalized_size, marginalized_size).ldlt();
+            if (Hmm_ldlt.info() == Eigen::Success) {
+                temp_H = Hmm_ldlt.solve(Hmr);
+                temp_b = Hmm_ldlt.solve(b_state_schur.tail(marginalized_size));
+            } else {
+                temp_H.setZero();
+                temp_b.setZero();
+            }
+        }
+
+        // (Hrr - Hrm * Hmm^-1 * Hmr) * dxp = br - Hrm * Hmm^-1 * bm
+#ifdef USE_OPENMP
+        // Hrr - Hrm * Hmm^-1 * Hmr
+        MatXX h_state_schur_block = h_state_schur.block(0, 0, reserve_size, reserve_size);
+        h_state_schur = MatXX::Zero(reserve_size, reserve_size);
+#pragma omp parallel for num_threads(NUM_THREADS)
+        for (ulong i = 0; i < reserve_size; ++i) {
+            h_state_schur(i, i) = -Hmr.col(i).dot(temp_H.col(i));
+            for (ulong j = i + 1; j < reserve_size; ++j) {
+                h_state_schur(i, j) = -Hmr.col(i).dot(temp_H.col(j));
+                h_state_schur(j, i) = h_state_schur(i, j);
+            }
+        }
+        h_state_schur += h_state_schur_block;
+#else
+
+        // Hrr - Hrm * Hmm^-1 * Hmr
+        h_state_schur = h_state_schur.block(0, 0, reserve_size, reserve_size) - h_state_schur.block(0, reserve_size, reserve_size, marginalized_size) * temp_H;
+
+#endif
+        // br - Hrm * Hmm^-1 * bm
+        b_state_schur = b_state_schur.head(reserve_size) - temp_H.transpose() * b_state_schur.tail(marginalized_size);
+
+        _h_prior.topLeftCorner(reserve_size, reserve_size) = h_state_schur;
+        _b_prior.topRows(reserve_size) = b_state_schur;
+
+        return true;
+    }
+
+
+
+    /*
+    * marginalize 所有和 frame 相连的 edge: imu factor, projection factor
+    * */
     bool ProblemSLAM::marginalize(const std::shared_ptr<Vertex>& vertex_pose, const std::shared_ptr<Vertex>& vertex_motion) {
         // 重新计算一篇ordering
         // initialize_ordering();
@@ -53,7 +347,7 @@ namespace graph_optimization {
 
         // 计算所需marginalize的edge的hessian
         ulong cols = state_dim + marginalized_landmark_size;
-        MatXX h_state_landmark(MatXX::Zero(cols, cols));
+        MatXX h_state_landmark = VecX::Constant(cols, 1, 1e-6).asDiagonal();
         VecX b_state_landmark(VecX::Zero(cols));
 
 #ifdef USE_OPENMP
@@ -71,25 +365,32 @@ namespace graph_optimization {
             auto &edge = marginalized_edges[n];
             auto &&jacobians = edge->jacobians();
             auto &&vertices = edge->vertices();
-
             assert(jacobians.size() == vertices.size());
+
+            // 计算edge的鲁棒权重
+            double drho;
+            MatXX robust_information;
+            VecX robust_residual;
+            edge->robust_information(drho, robust_information, robust_residual);
+
             for (size_t i = 0; i < vertices.size(); ++i) {
                 auto &&v_i = vertices[i];
                 if (v_i->is_fixed()) continue;
 
                 auto &&jacobian_i = jacobians[i];
+                if (jacobian_i.rows() == 0) continue;
+
                 ulong index_i = v_i->ordering_id();
                 ulong dim_i = v_i->local_dimension();
 
-                double drho;
-                MatXX robust_information(edge->information().rows(), edge->information().cols());
-                edge->robust_information(drho, robust_information);
                 MatXX JtW = jacobian_i.transpose() * robust_information;
                 for (size_t j = i; j < vertices.size(); ++j) {
                     auto &&v_j = vertices[j];
                     if (v_j->is_fixed()) continue;
 
                     auto &&jacobian_j = jacobians[j];
+                    if (jacobian_j.rows() == 0) continue;
+
                     ulong index_j = v_j->ordering_id();
                     ulong dim_j = v_j->local_dimension();
 
@@ -103,7 +404,7 @@ namespace graph_optimization {
                         Hs[index].block(index_j, index_i, dim_j, dim_i).noalias() += hessian.transpose();
                     }
                 }
-                bs[index].segment(index_i, dim_i).noalias() -= drho * jacobian_i.transpose() * edge->information() * edge->residual();
+                bs[index].segment(index_i, dim_i).noalias() -= jacobian_i.transpose() * robust_residual;
             }
         }
 
@@ -121,21 +422,31 @@ namespace graph_optimization {
             auto &&vertices = edge->vertices();
 
             assert(jacobians.size() == vertices.size());
+
+            // 计算edge的鲁棒权重
+            double drho;
+            MatXX robust_information;
+            VecX robust_residual;
+            edge->robust_information(drho, robust_information, robust_residual);
+
             for (size_t i = 0; i < vertices.size(); ++i) {
-                auto v_i = vertices[i];
-                auto jacobian_i = jacobians[i];
+                auto &&v_i = vertices[i];
+                if (v_i->is_fixed()) continue;
+
+                auto &&jacobian_i = jacobians[i];
+                if (jacobian_i.rows() == 0) continue;
+
                 ulong index_i = v_i->ordering_id();
                 ulong dim_i = v_i->local_dimension();
 
-                double drho;
-                MatXX robust_information(edge->information().rows(), edge->information().cols());
-                edge->robust_information(drho, robust_information);
                 MatXX JtW = jacobian_i.transpose() * robust_information;
                 for (size_t j = i; j < vertices.size(); ++j) {
                     auto &&v_j = vertices[j];
                     if (v_j->is_fixed()) continue;
 
                     auto &&jacobian_j = jacobians[j];
+                    if (jacobian_j.rows() == 0) continue;
+
                     ulong index_j = v_j->ordering_id();
                     ulong dim_j = v_j->local_dimension();
 
@@ -149,7 +460,7 @@ namespace graph_optimization {
                         h_state_landmark.block(index_j, index_i, dim_j, dim_i) += hessian.transpose();
                     }
                 }
-                b_state_landmark.segment(index_i, dim_i) -= drho * jacobian_i.transpose() * edge->information() * edge->residual();
+                b_state_landmark.segment(index_i, dim_i) -= jacobian_i.transpose() * robust_residual;
             }
         }
 #endif
@@ -250,6 +561,9 @@ namespace graph_optimization {
         if(_h_prior.rows() > 0) {
             h_state_schur += _h_prior;
             b_state_schur += _b_prior;
+        } else {
+            _h_prior = MatXX::Zero(state_dim, state_dim);
+            _b_prior = VecX::Zero(state_dim, 1);
         }
 
         // 把需要marginalize的pose和motion的vertices移动到最下面
@@ -349,19 +663,21 @@ namespace graph_optimization {
             marginalize_bottom_vertex(vertex_motion);
         }
 
-        _h_prior = h_state_schur;
-        _b_prior = b_state_schur;
+        _h_prior.topLeftCorner(state_dim, state_dim) = h_state_schur;
+        _b_prior.topRows(state_dim) = b_state_schur;
 
-        // 移除顶点
-        remove_vertex(vertex_pose);
-        if (vertex_motion) {
-            remove_vertex(vertex_motion);
-        }
+// #ifdef REMOVE_VERTEX_WHEN_MARGINLIZATION
+//         // 移除顶点
+//         remove_vertex(vertex_pose);
+//         if (vertex_motion) {
+//             remove_vertex(vertex_motion);
+//         }
 
-        // 移除路标
-        for (auto &landmark : marginalized_landmark) {
-            remove_vertex(landmark.second);
-        }
+//         // 移除路标
+//         for (auto &landmark : marginalized_landmark) {
+//             remove_vertex(landmark.second);
+//         }
+// #endif
 
         return true;
     }
@@ -387,113 +703,64 @@ namespace graph_optimization {
         }
 
         /*
-            * [Hpp Hpl][dxp] = [bp]
-            * [Hlp Hll][dxl] = [bl]
-            *
-            * (Hpp - Hpl * Hll^-1 * Hlp) * dxp = bp - Hpl * Hll^-1 * bl
-            * Hll * dxl = bl - Hlp * dxp
-            * */
+        * [Hpp Hpl][xp] = [bp]
+        * [Hlp Hll][xl] = [bl]
+        *
+        * (Hpp - Hpl * Hll^-1 * Hlp) * xp = bp - Hpl * Hll^-1 * bl
+        * Hll * xl = bl - Hlp * xp
+        * */
         ulong reserve_size = _ordering_poses;
         ulong marg_size = _ordering_landmarks;
 
+        // Hll
+        VecX Hll = _hessian.block(reserve_size, reserve_size, marg_size, marg_size).diagonal();
+        // Hll + λ
+        Hll += _diag_lambda.tail(marg_size);
         // 由于叠加了lambda, 所以能够保证Hll可逆
-        MatXX Hll = _hessian.block(reserve_size, reserve_size, marg_size, marg_size);
-        for (int i = 0; i < marg_size; ++i) {   // LM Method
-            // Hll(i, i) += _current_lambda;
-            Hll(i, i) += _diag_lambda(i + reserve_size);
-            if (Hll(i, i) < _diag_lambda(i + reserve_size)) {
-                Hll(i, i) = _diag_lambda(i + reserve_size);
-            }
-        }
-//        MatXX Hpl = _hessian.block(0, reserve_size, reserve_size, marg_size);
-        MatXX Hlp = _hessian.block(reserve_size, 0, marg_size, reserve_size);
-//        VecX bpp = _b.segment(0, reserve_size);
-        VecX bll = _b.segment(reserve_size, marg_size);
-        MatXX temp_H(MatXX::Zero(marg_size, reserve_size));  // Hll^-1 * Hpl^T
-        VecX temp_b(VecX::Zero(marg_size, 1));   // Hll^-1 * bl
-#ifdef USE_OPENMP
-#pragma omp parallel for num_threads(NUM_THREADS)
-        for (size_t n = 0; n < _idx_landmark_vertices.size(); ++n) {
-            ulong idx = _idx_landmark_vertices[n].second->ordering_id() - reserve_size;
-            ulong size = _idx_landmark_vertices[n].second->local_dimension();
-            if (size == 1) {
-                temp_H.row(idx) = Hlp.row(idx) / Hll(idx, idx);
-                temp_b(idx) = bll(idx) / Hll(idx, idx);
-            } else {
-                auto &&Hll_ldlt = Hll.block(idx, idx, size, size).ldlt();
-                if (Hll_ldlt.info() == Eigen::Success) {
-                    temp_H.block(idx, 0, size, reserve_size) = Hll_ldlt.solve(Hlp.block(idx, 0, size, reserve_size));
-                    temp_b.segment(idx, size) = Hll_ldlt.solve(bll.segment(idx, size));
-                }
-            }
-        }
-#else
-        for (const auto& landmark_vertex : _idx_landmark_vertices) {
-            ulong idx = landmark_vertex.second->ordering_id() - reserve_size;
-            ulong size = landmark_vertex.second->local_dimension();
-            if (size == 1) {
-                temp_H.row(idx) = Hlp.row(idx) / Hll(idx, idx);
-                temp_b(idx) = bll(idx) / Hll(idx, idx);
-            } else {
-                auto &&Hll_ldlt = Hll.block(idx, idx, size, size).ldlt();
-                if (Hll_ldlt.info() != Eigen::Success) {
-                    return false;
-                }
-                temp_H.block(idx, 0, size, reserve_size) = Hll_ldlt.solve(Hlp.block(idx, 0, size, reserve_size));
-                temp_b.segment(idx, size) = Hll_ldlt.solve(bll.segment(idx, size));
-            }
-        }
-#endif
+        VecX Hll_inv = Hll.array().inverse();
+
+        // Hll^-1 * Hpl^T
+        MatXX temp_H = Hll_inv.asDiagonal() * _hessian.block(reserve_size, 0, marg_size, reserve_size);  
+        // Hll^-1 * bl
+        VecX temp_b = Hll_inv.cwiseProduct(_b.tail(marg_size));   
 
         // (Hpp - Hpl * Hll^-1 * Hlp) * dxp = bp - Hpl * Hll^-1 * bl
         // 这里即使叠加了lambda, 也有可能因为数值精度的问题而导致 _h_pp_schur 不可逆
-        
 #ifdef USE_OPENMP
         _h_pp_schur = MatXX::Zero(reserve_size, reserve_size);
 #pragma omp parallel for num_threads(NUM_THREADS)
         for (ulong i = 0; i < reserve_size; ++i) {
-            _h_pp_schur(i, i) = -Hlp.col(i).dot(temp_H.col(i));
+            _h_pp_schur(i, i) = -temp_H.col(i).dot(_hessian.block(reserve_size, 0, marg_size, reserve_size).col(i));
             for (ulong j = i + 1; j < reserve_size; ++j) {
-                _h_pp_schur(i, j) = -Hlp.col(i).dot(temp_H.col(j));
+                _h_pp_schur(i, j) = -temp_H.col(j).dot(_hessian.block(reserve_size, 0, marg_size, reserve_size).col(i));
                 _h_pp_schur(j, i) = _h_pp_schur(i, j);
             }
         }
         _h_pp_schur += _hessian.block(0, 0, reserve_size, reserve_size);
 #else
-        _h_pp_schur = _hessian.block(0, 0, reserve_size, reserve_size);// - Hlp.transpose() * temp_H;
-        for (ulong i = 0; i < reserve_size; ++i) {
-            _h_pp_schur(i, i) -= Hlp.col(i).dot(temp_H.col(i));
-            for (ulong j = i + 1; j < reserve_size; ++j) {
-                _h_pp_schur(i, j) -= Hlp.col(i).dot(temp_H.col(j));
-                _h_pp_schur(j, i) = _h_pp_schur(i, j);
-            }
-        }
+        // Hpp - Hpl * Hll^-1 * Hlp
+        _h_pp_schur = _hessian.block(0, 0, reserve_size, reserve_size) - _hessian.block(0, reserve_size, reserve_size, marg_size) * temp_H;
 #endif
-        
-        for (ulong i = 0; i < _ordering_poses; ++i) {
-            // _h_pp_schur(i, i) += _current_lambda;    // LM Method
-            _h_pp_schur(i, i) += _diag_lambda(i);
-        }
-        _b_pp_schur = _b.segment(0, reserve_size) - Hlp.transpose() * temp_b;
+        // Hpp - Hpl * Hll^-1 * Hlp + λ
+        _h_pp_schur += _diag_lambda.head(reserve_size).asDiagonal();
 
-        // Solve: Hpp * delta_x = bpp
-        VecX delta_x_pp(VecX::Zero(reserve_size));
+        // bp - Hpl * Hll^-1 * bl
+        _b_pp_schur = _b.head(reserve_size) - temp_H.transpose() * _b.tail(marg_size);
+
+        // Solve: Hpp * xp = bp
 #ifdef USE_PCG_SOLVER
         auto n_pcg = _h_pp_schur.rows();                       // 迭代次数
-        delta_x_pp = PCG_solver(_h_pp_schur, _b_pp_schur, n_pcg);
+        delta_x.head(reserve_size) = PCG_solver(_h_pp_schur, _b_pp_schur, n_pcg);
 #else
         auto &&H_pp_schur_ldlt = _h_pp_schur.ldlt();
         if (H_pp_schur_ldlt.info() != Eigen::Success) {
             return false;   // H_pp_schur不是正定矩阵
         }
-        delta_x_pp =  H_pp_schur_ldlt.solve(_b_pp_schur);
+        delta_x.head(reserve_size) =  H_pp_schur_ldlt.solve(_b_pp_schur);
 #endif
-        delta_x.head(reserve_size) = delta_x_pp;
 
-        // Hll * dxl = bl - Hlp * dxp
-        VecX delta_x_ll(marg_size);
-        delta_x_ll = temp_b - temp_H * delta_x_pp;
-        delta_x.tail(marg_size) = delta_x_ll;
+        // Hll * xl = bl - Hlp * xp
+        delta_x.tail(marg_size) = temp_b - temp_H * delta_x.head(reserve_size);
 
         return true;
     }
@@ -535,43 +802,69 @@ namespace graph_optimization {
     }
 
     void ProblemSLAM::initialize_ordering() {
-        _ordering_generic = 0;
+        // std::cout << "new: " << _ordering_poses << ", " << _ordering_landmarks << std::endl;
 
-        // 分配pose的维度
-        _ordering_poses = 0;
-        _idx_pose_vertices.clear();
-        for (auto &vertex: _vertices) {
-            if (is_pose_vertex(vertex.second)) {
-                vertex.second->set_ordering_id(_ordering_poses);
-                _idx_pose_vertices.emplace_back(vertex.second->id(), vertex.second);
-                // _idx_pose_vertices.insert(pair<ulong, std::shared_ptr<Vertex>>(vertex.second->id(), vertex.second));
-                _ordering_poses += vertex.second->local_dimension();
-            }
-        }
+        // _ordering_generic = 0;
 
-        // 分配landmark的维度
-        _ordering_landmarks = 0;
-        _idx_landmark_vertices.clear();
-        for (auto &vertex: _vertices) {
-            if (is_landmark_vertex(vertex.second)) {
-                vertex.second->set_ordering_id(_ordering_landmarks + _ordering_poses);
-                _idx_landmark_vertices.emplace_back(vertex.second->id(), vertex.second);
-                // _idx_landmark_vertices.insert(pair<ulong, std::shared_ptr<Vertex>>(vertex.second->id(), vertex.second));
-                _ordering_landmarks += vertex.second->local_dimension();
-            }
-        }
+        // // 分配pose的维度
+        // _ordering_poses = 0;
+        // _idx_pose_vertices.clear();
+        // for (auto &vertex: _vertices) {
+        //     if (is_pose_vertex(vertex.second)) {
+        //         vertex.second->set_ordering_id(_ordering_poses);
+        //         _idx_pose_vertices.emplace_back(vertex.second->ordering_id(), vertex.second);
+        //         // _idx_pose_vertices.insert(pair<ulong, std::shared_ptr<Vertex>>(vertex.second->id(), vertex.second));
+        //         _ordering_poses += vertex.second->local_dimension();
+        //     }
+        // }
+
+        // // 分配landmark的维度
+        // _ordering_landmarks = 0;
+        // _idx_landmark_vertices.clear();
+        // for (auto &vertex: _vertices) {
+        //     if (is_landmark_vertex(vertex.second)) {
+        //         vertex.second->set_ordering_id(_ordering_landmarks + _ordering_poses);
+        //         _idx_landmark_vertices.emplace_back(vertex.second->ordering_id(), vertex.second);
+        //         // _idx_landmark_vertices.insert(pair<ulong, std::shared_ptr<Vertex>>(vertex.second->id(), vertex.second));
+        //         _ordering_landmarks += vertex.second->local_dimension();
+        //     }
+        // }
 
         _ordering_generic = _ordering_poses + _ordering_landmarks;
+
+
+        // std::cout << "old: " << _ordering_poses << ", " << _ordering_landmarks << std::endl;
     }
 
-    bool ProblemSLAM::add_vertex(const std::shared_ptr<Vertex>& vertex) {
+//     bool ProblemSLAM::add_vertex(const std::shared_ptr<Vertex>& vertex) {
+//         if (Problem::add_vertex(vertex)) {
+//             _ordering_poses += vertex->local_dimension();
+// //            if (is_pose_vertex(vertex)) {
+// //                resize_pose_hessian_when_adding_pose(vertex);
+// //            }
+//             return true;
+//         }
+
+//         return false;
+//     }
+
+    bool ProblemSLAM::add_state_vertex(const std::shared_ptr<Vertex>& vertex) {
         if (Problem::add_vertex(vertex)) {
-            if (is_pose_vertex(vertex)) {
-                resize_pose_hessian_when_adding_pose(vertex);
-            }
+            vertex->set_ordering_id(_ordering_poses);
+            _ordering_poses += vertex->local_dimension();
+            _idx_pose_vertices.emplace_back(vertex->ordering_id(), vertex);
             return true;
         }
+        return false;
+    }
 
+    bool ProblemSLAM::add_landmark_vertex(const std::shared_ptr<Vertex>& vertex) {
+        if (Problem::add_vertex(vertex)) {
+            vertex->set_ordering_id(_ordering_landmarks + _ordering_poses);
+            _ordering_landmarks += vertex->local_dimension();
+            _idx_landmark_vertices.emplace_back(vertex->ordering_id(), vertex);
+            return true;
+        }
         return false;
     }
 

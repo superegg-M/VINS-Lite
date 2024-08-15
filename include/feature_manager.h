@@ -16,6 +16,8 @@ using namespace Eigen;
 // #include <ros/assert.h>
 
 #include "parameters.h"
+#include "backend/vertex_inverse_depth.h"
+#include<memory>
 
 #define USE_OPENMP
 
@@ -55,6 +57,7 @@ public:
     int solve_flag {0}; // 0 haven't solve yet; 1 solve succ; 2 solve fail;
 
     Vector3d gt_p;
+    shared_ptr<graph_optimization::VertexInverseDepth> vertex_landmark {new graph_optimization::VertexInverseDepth};
 
     FeaturePerId(unsigned int feature_idx, unsigned int start_frame_idx)
     : feature_id(feature_idx), start_frame_id(start_frame_idx) {
@@ -115,6 +118,8 @@ public:
 #endif
     vector<unsigned long> feature_id_erase;
     unsigned int last_track_num {0};
+
+    unsigned long activate_features_num = 0;
 
 private:
     double compensated_parallax2(const FeaturePerId &it_per_id, unsigned int frame_count);

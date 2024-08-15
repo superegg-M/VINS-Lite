@@ -43,18 +43,26 @@ namespace graph_optimization {
         _rho = _loss_function->compute(_chi2);
     }
 
-    void Edge::robust_information(double &drho, MatXX &info) const {
-        VecX w_e = _information * _residual;
+    void Edge::robust_information(double &drho, MatXX &info, VecX &res) const {
+        if (_use_info) {
+            res = _information * _residual;
+            info = _rho[1] * _information;
+            if(_rho[1] + 2. * _rho[2] * _chi2 > 0.) {
+                info += ((2. * _rho[2]) * res) * res.transpose();
+            }
+            res *= _rho[1];
 
-        MatXX robust_info(_information.rows(), _information.cols());
-        robust_info.setIdentity();
-        robust_info *= _rho[1] * _information;
-        if(_rho[1] + 2 * _rho[2] * _chi2 > 0.) {
-            robust_info += 2 * _rho[2] * w_e * w_e.transpose();
+            drho = _rho[1];
+        } else {
+            res = _residual;
+            info = _rho[1] * MatXX::Identity(_information.rows(), _information.cols());
+            if(_rho[1] + 2. * _rho[2] * _chi2 > 0.) {
+                info += ((2. * _rho[2]) * res) * res.transpose();
+            }
+            res *= _rho[1];
+
+            drho = _rho[1];
         }
-
-        info = robust_info;
-        drho = _rho[1];
     }
 
     bool Edge::check_valid() {
