@@ -18,61 +18,30 @@ using namespace std;
 namespace graph_optimization {
     Problem::Problem() {
         logout_vector_size();
-        _vertices_marg.clear();
     }
 
     bool Problem::add_vertex(const std::shared_ptr<Vertex>& vertex) {
-        // if (_vertices.find(vertex->id()) != _vertices.end()) {
-        //     // LOG(WARNING) << "Vertex " << vertex->Id() << " has been added before";
-        //     return false;
-        // }
-        _vertices.emplace_back(vertex->id(), vertex);
+        _vertices.emplace_back(vertex);
 
         return true;
     }
 
     bool Problem::remove_vertex(const std::shared_ptr<Vertex>& vertex) {
-        // 如果顶点不在顶点map中, 则返回false
-        // if (_vertices.find(vertex->id()) == _vertices.end()) {
-        //     // LOG(WARNING) << "The vertex " << vertex->Id() << " is not in the problem!" << endl;
-        //     return false;
-        // }
-
-        // 若删除顶点, 则需要把顶点所连接的edge也删除
-        auto &&edges = get_connected_edges(vertex);
-        for (auto & edge : edges) {
-            remove_edge(edge);
-        }
-
-        vertex->set_ordering_id(-1);      // used to debug
-        // _vertices.erase(vertex->id());
-        _vertex_to_edge.erase(vertex->id());
-
+        // TODO:
         return true;
     }
 
     bool Problem::add_edge(const shared_ptr<Edge>& edge) {
-        if (_edges.find(edge->id()) == _edges.end()) {
-            _edges.insert(pair<ulong, std::shared_ptr<Edge>>(edge->id(), edge));
-        } else {
-            // LOG(WARNING) << "Edge " << edge->Id() << " has been added before!";
-            return false;
-        }
+        _edges.emplace_back(edge);
 
         for (auto &vertex: edge->vertices()) {
-            _vertex_to_edge.insert(pair<ulong, shared_ptr<Edge>>(vertex->id(), edge));
+            _vertex_to_edge.emplace(vertex->id(), edge);
         }
         return true;
     }
 
     bool Problem::remove_edge(const std::shared_ptr<Edge>& edge) {
-        //check if the edge is in map_edges_
-        if (_edges.find(edge->id()) == _edges.end()) {
-            // LOG(WARNING) << "The edge " << edge->Id() << " is not in the problem!" << endl;
-            return false;
-        }
-
-        _edges.erase(edge->id());
+        // TODO:
         return true;
     }
 
@@ -83,18 +52,6 @@ namespace graph_optimization {
         }
 
         TicToc t_solve;
-
-#ifdef USE_OPENMP
-        _edges_vector.clear();
-        for (auto &edge: _edges) {
-            _edges_vector.emplace_back(edge);
-        }
-
-        _vertices_vector.clear();
-        for (auto &vertex : _vertices) {
-            _vertices_vector.emplace_back(vertex);
-        }
-#endif
 
         _t_hessian_cost = 0.;
         _t_jacobian_cost = 0.;
@@ -118,16 +75,17 @@ namespace graph_optimization {
                 flag = calculate_dog_leg(_delta_x_dl, iterations);
                 break;
             default:
-                // flag = calculate_levenberg_marquardt(_delta_x_lm, iterations);
-                flag = Solve(iterations);
+                flag = calculate_levenberg_marquardt(_delta_x_lm, iterations);
                 break;
         }
 
+#ifdef PRINT_INFO
         std::cout << "problem solve cost: " << t_solve.toc() << " ms" << std::endl;
         std::cout << "update_hessian cost: " << _t_hessian_cost << " ms" << std::endl;
         std::cout << "update_jacobian cost: " << _t_jacobian_cost << " ms" << std::endl;
         std::cout << "update_chi2 cost: " << _t_chi2_cost << " ms" << std::endl;
         std::cout << "update_residual cost: " << _t_residual_cost << " ms" << std::endl;
+#endif
 
         return flag;
     }
@@ -138,9 +96,12 @@ namespace graph_optimization {
 
         // Note: _vertices 是 map 类型的, 顺序是按照 id 号排序的
         // 统计带估计的所有变量的总维度
-        for (auto &vertex: _vertices) {
-            vertex.second->set_ordering_id(_ordering_generic);
-            _ordering_generic += vertex.second->local_dimension();  // 所有的优化变量总维数
+#ifdef USE_OPENMP
+#pragma omp parallel for num_threads(NUM_THREADS) default(none)
+#endif
+        for (size_t i = 0; i < _vertices.size(); ++i) {
+            _vertices[i]->set_ordering_id(_ordering_generic);
+            _ordering_generic += _vertices[i]->local_dimension();  // 所有的优化变量总维数
         }
     }
 
@@ -159,47 +120,38 @@ namespace graph_optimization {
             bs[i] = VecX::Zero(size);
         }
 
-        TicToc t_tmp[NUM_THREADS];
-        double t_cost[NUM_THREADS] {0};
-
         // 遍历每个残差，并计算他们的雅克比，得到最后的 H = J^T * J
 //        omp_set_num_threads(NUM_THREADS);
-#pragma omp parallel for num_threads(NUM_THREADS)
-        for (size_t n = 0; n < _edges_vector.size(); ++n) {//for (auto &edge: edges) {
+#pragma omp parallel for num_threads(NUM_THREADS) default(none) shared(Hs, bs)
+        for (size_t n = 0; n < _edges.size(); ++n) {//for (auto &edge: edges) {
             unsigned int index = omp_get_thread_num();
 
-            t_tmp[index].tic();
-            auto &&edge = _edges_vector[n];
-            auto &&jacobians = edge.second->jacobians();
-            auto &&verticies = edge.second->vertices();
+            auto &&edge = _edges[n];
+            auto &&jacobians = edge->jacobians();
+            auto &&verticies = edge->vertices();
             assert(jacobians.size() == verticies.size());
-            t_cost[index] += t_tmp[index].toc();
 
             // 计算edge的鲁棒权重
             double drho;
             MatXX robust_information;
             VecX robust_residual;
-            edge.second->robust_information(drho, robust_information, robust_residual);
+            edge->robust_information(drho, robust_information, robust_residual);
             for (size_t i = 0; i < verticies.size(); ++i) {
-                t_tmp[index].tic();
                 auto &&v_i = verticies[i];
                 if (v_i->is_fixed()) continue;    // Hessian 里不需要添加它的信息，也就是它的雅克比为 0
 
                 auto &&jacobian_i = jacobians[i];
                 ulong index_i = v_i->ordering_id();
                 ulong dim_i = v_i->local_dimension();
-                t_cost[index] += t_tmp[index].toc();
 
                 MatXX JtW = jacobian_i.transpose() * robust_information;
                 for (size_t j = i; j < verticies.size(); ++j) {
-                    t_tmp[index].tic();
                     auto &&v_j = verticies[j];
                     if (v_j->is_fixed()) continue;
 
                     auto &&jacobian_j = jacobians[j];
                     ulong index_j = v_j->ordering_id();
                     ulong dim_j = v_j->local_dimension();
-                    t_cost[index] += t_tmp[index].toc();
 
 //                    assert(v_j->ordering_id() != -1);
                     MatXX hessian = JtW * jacobian_j;   // TODO: 这里能继续优化, 因为J'*W*J也是对称矩阵
@@ -223,8 +175,8 @@ namespace graph_optimization {
 #else
         // 遍历每个残差，并计算他们的雅克比，得到最后的 H = J^T * J
         for (auto &edge: edges) {
-            auto &&jacobians = edge.second->jacobians();
-            auto &&verticies = edge.second->vertices();
+            auto &&jacobians = edge->jacobians();
+            auto &&verticies = edge->vertices();
             assert(jacobians.size() == verticies.size());
 
             // 计算edge的鲁棒权重
@@ -281,29 +233,19 @@ namespace graph_optimization {
 
             // 对所有没有被fix的顶点添加先验信息
 #ifdef USE_OPENMP
-            for (size_t n = 0; n < _vertices_vector.size(); ++n) {
-                auto &&vertex = _vertices_vector[n];
-                if (vertex.second->is_fixed()) {
-                    ulong idx = vertex.second->ordering_id();
-                    ulong dim = vertex.second->local_dimension();
-                    H_prior_tmp.block(idx,0, dim, H_prior_tmp.cols()).setZero();
-                    H_prior_tmp.block(0,idx, H_prior_tmp.rows(), dim).setZero();
-                    b_prior_tmp.segment(idx,dim).setZero();
-//                std::cout << " fixed prior, set the Hprior and bprior part to zero, idx: "<<idx <<" dim: "<<dim<<std::endl;
-                }
-            }
-#else
-            for (const auto& vertex: _vertices) {
-                if (vertex.second->is_fixed()) {
-                    ulong idx = vertex.second->ordering_id();
-                    ulong dim = vertex.second->local_dimension();
-                    H_prior_tmp.block(idx,0, dim, H_prior_tmp.cols()).setZero();
-                    H_prior_tmp.block(0,idx, H_prior_tmp.rows(), dim).setZero();
-                    b_prior_tmp.segment(idx,dim).setZero();
-//                std::cout << " fixed prior, set the Hprior and bprior part to zero, idx: "<<idx <<" dim: "<<dim<<std::endl;
-                }
-            }
+#pragma omp parallel for num_threads(NUM_THREADS) default(none) shared(H_prior_tmp, b_prior_tmp)
 #endif
+            for (size_t n = 0; n < _vertices.size(); ++n) {
+                auto &&vertex = _vertices[n];
+                if (vertex->is_fixed()) {
+                    ulong idx = vertex->ordering_id();
+                    ulong dim = vertex->local_dimension();
+                    H_prior_tmp.block(idx,0, dim, H_prior_tmp.cols()).setZero();
+                    H_prior_tmp.block(0,idx, H_prior_tmp.rows(), dim).setZero();
+                    b_prior_tmp.segment(idx,dim).setZero();
+//                std::cout << " fixed prior, set the Hprior and bprior part to zero, idx: "<<idx <<" dim: "<<dim<<std::endl;
+                }
+            }
             _hessian += H_prior_tmp;
             _b += b_prior_tmp;
         }
@@ -418,26 +360,17 @@ namespace graph_optimization {
 
     void Problem::update_states(const VecX &delta_x) {
 #ifdef USE_OPENMP
-#pragma omp parallel for num_threads(NUM_THREADS)
-        for (size_t n = 0; n < _vertices_vector.size(); ++n) {
-            auto &&vertex = _vertices_vector[n];
-            vertex.second->save_parameters();
-
-            VecX delta = delta_x.segment(vertex.second->ordering_id(), vertex.second->local_dimension());
-
-            // 所有的参数 x 叠加一个增量  x_{k+1} = x_{k} + delta_x
-            vertex.second->plus(delta);
-        }
-#else
-        for (auto &vertex: _vertices) {
-            vertex.second->save_parameters();
-
-            VecX delta = delta_x.segment(vertex.second->ordering_id(), vertex.second->local_dimension());
-
-            // 所有的参数 x 叠加一个增量  x_{k+1} = x_{k} + delta_x
-            vertex.second->plus(delta);
-        }
+#pragma omp parallel for num_threads(NUM_THREADS) default(none) shared(delta_x)
 #endif
+        for (size_t n = 0; n < _vertices.size(); ++n) {
+            auto &&vertex = _vertices[n];
+            vertex->save_parameters();
+
+            VecX delta = delta_x.segment(vertex->ordering_id(), vertex->local_dimension());
+
+            // 所有的参数 x 叠加一个增量  x_{k+1} = x_{k} + delta_x
+            vertex->plus(delta);
+        }
 
         // 利用 delta_x 更新先验信息
         update_prior(delta_x);
@@ -454,15 +387,11 @@ namespace graph_optimization {
         TicToc t_r;
 
 #ifdef USE_OPENMP
-#pragma omp parallel for num_threads(NUM_THREADS)
-        for (size_t n = 0; n < _edges_vector.size(); ++n) {
-            _edges_vector[n].second->compute_residual();
-        }
-#else
-        for (auto &edge: _edges) {
-            edge.second->compute_residual();
-        }
+#pragma omp parallel for num_threads(NUM_THREADS) default(none)
 #endif
+        for (size_t n = 0; n < _edges.size(); ++n) {
+            _edges[n]->compute_residual();
+        }
 
         _t_residual_cost += t_r.toc();
     }
@@ -471,15 +400,11 @@ namespace graph_optimization {
         TicToc t_j;
 
 #ifdef USE_OPENMP
-#pragma omp parallel for num_threads(NUM_THREADS)
-        for (size_t n = 0; n < _edges_vector.size(); ++n) {
-            _edges_vector[n].second->compute_jacobians();
-        }
-#else
-        for (auto &edge: _edges) {
-            edge.second->compute_jacobians();
-        }
+#pragma omp parallel for num_threads(NUM_THREADS) default(none)
 #endif
+        for (size_t n = 0; n < _edges.size(); ++n) {
+            _edges[n]->compute_jacobians();
+        }
 
         _t_jacobian_cost += t_j.toc();
     }
@@ -489,17 +414,12 @@ namespace graph_optimization {
 
         _chi2 = 0.;
 #ifdef USE_OPENMP
-#pragma omp parallel for num_threads(NUM_THREADS) reduction(+:_chi2)
-        for (size_t n = 0; n < _edges_vector.size(); ++n) {
-            _edges_vector[n].second->compute_chi2();
-            _chi2 += _edges_vector[n].second->get_robust_chi2();
-        }
-#else
-        for (auto &edge: _edges) {
-            edge.second->compute_chi2();
-            _chi2 += edge.second->get_robust_chi2();
-        }
+#pragma omp parallel for num_threads(NUM_THREADS) default(none) reduction(+:_chi2)
 #endif
+        for (size_t n = 0; n < _edges.size(); ++n) {
+            _edges[n]->compute_chi2();
+            _chi2 += _edges[n]->get_robust_chi2();
+        }
         _chi2 *= 0.5;
 
         _t_chi2_cost += t_c.toc();
@@ -507,28 +427,12 @@ namespace graph_optimization {
 
     void Problem::rollback_states(const VecX &delta_x) {
 #ifdef USE_OPENMP
-#pragma omp parallel for num_threads(NUM_THREADS)
-        for (size_t n = 0; n < _vertices_vector.size(); ++n) {
-            auto &&vertex = _vertices_vector[n];
-
-//            // 之前的增量加了后使得损失函数增加了，我们应该不要这次迭代结果，所以把之前加上的量减去。
-//            VecX delta = delta_x.segment(vertex.second->ordering_id(), vertex.second->local_dimension());
-//            vertex.second->plus(-delta);
-
-            vertex.second->load_parameters();
-        }
-#else
-        for (auto &vertex: _vertices) {
-            // ulong idx = vertex.second->ordering_id();
-            // ulong dim = vertex.second->local_dimension();
-            // VecX delta = delta_x.segment(idx, dim);
-
-//            // 之前的增量加了后使得损失函数增加了，我们应该不要这次迭代结果，所以把之前加上的量减去。
-//            vertex.second->plus(-delta);
-            vertex.second->load_parameters();
-        }
+#pragma omp parallel for num_threads(NUM_THREADS) default(none)
 #endif
-
+        for (size_t n = 0; n < _vertices.size(); ++n) {
+            auto &&vertex = _vertices[n];
+            vertex->load_parameters();
+        }
         _b_prior = _b_prior_bp;
     }
 
@@ -610,11 +514,11 @@ namespace graph_optimization {
 
     bool Problem::check_ordering() {
         unsigned long current_ordering = 0;
-        for (const auto &v : _vertices) {
-            if (v.second->ordering_id() != current_ordering) {
+        for (size_t n = 0; n < _vertices.size(); ++n) {
+            if (_vertices[n]->ordering_id() != current_ordering) {
                 return false;
             }
-            current_ordering += v.second->local_dimension();
+            current_ordering += _vertices[n]->local_dimension();
         }
         return true;
     }
@@ -623,11 +527,6 @@ namespace graph_optimization {
         vector<shared_ptr<Edge>> edges;
         auto range = _vertex_to_edge.equal_range(vertex->id());
         for (auto iter = range.first; iter != range.second; ++iter) {
-
-            // 并且这个edge还需要存在，而不是已经被remove了
-            if (_edges.find(iter->second->id()) == _edges.end())
-                continue;
-
             edges.emplace_back(iter->second);
         }
         return edges;
@@ -637,62 +536,5 @@ namespace graph_optimization {
         // LOG(INFO) <<l
         //           "1 problem::LogoutVectorSize verticies_:" << verticies_.size() <<
         //           " edges:" << edges_.size();
-    }
-
-    void Problem::test_marginalize() {
-        // Add marg test
-        int idx = 1;            // marg 中间那个变量
-        int dim = 1;            // marg 变量的维度
-        int reserve_size = 3;   // 总共变量的维度
-        double delta1 = 0.1 * 0.1;
-        double delta2 = 0.2 * 0.2;
-        double delta3 = 0.3 * 0.3;
-
-        int cols = 3;
-        MatXX H_marg(MatXX::Zero(cols, cols));
-        H_marg << 1./delta1, -1./delta1, 0,
-                -1./delta1, 1./delta1 + 1./delta2 + 1./delta3, -1./delta3,
-                0.,  -1./delta3, 1/delta3;
-        std::cout << "---------- TEST Marg: before marg------------"<< std::endl;
-        std::cout << H_marg << std::endl;
-
-        // TODO:: home work. 将变量移动到右下角
-        /// 准备工作： move the marg pose to the Hmm bottown right
-        // 将 row i 移动矩阵最下面
-        Eigen::MatrixXd temp_rows = H_marg.block(idx, 0, dim, reserve_size);
-        Eigen::MatrixXd temp_botRows = H_marg.block(idx + dim, 0, reserve_size - idx - dim, reserve_size);
-        H_marg.block(idx, 0, reserve_size - idx - dim, reserve_size) = temp_botRows;
-        H_marg.block(reserve_size - dim, 0, dim, reserve_size) = temp_rows;
-
-        // 将 col i 移动矩阵最右边
-        Eigen::MatrixXd temp_cols = H_marg.block(0, idx, reserve_size, dim);
-        Eigen::MatrixXd temp_rightCols = H_marg.block(0, idx + dim, reserve_size, reserve_size - idx - dim);
-        H_marg.block(0, idx, reserve_size, reserve_size - idx - dim) = temp_rightCols;
-        H_marg.block(0, reserve_size - dim, reserve_size, dim) = temp_cols;
-
-        std::cout << "---------- TEST Marg: remove to right bottom ------------"<< std::endl;
-        std::cout<< H_marg <<std::endl;
-
-        /// 开始 marg ： schur
-        double eps = 1e-8;
-        int m2 = dim;
-        int n2 = reserve_size - dim;   // 剩余变量的维度
-        Eigen::MatrixXd Amm = 0.5 * (H_marg.block(n2, n2, m2, m2) + H_marg.block(n2, n2, m2, m2).transpose());
-
-        Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> saes(Amm);
-        Eigen::MatrixXd Amm_inv = saes.eigenvectors() * Eigen::VectorXd(
-                (saes.eigenvalues().array() > eps).select(saes.eigenvalues().array().inverse(), 0)).asDiagonal() *
-                                  saes.eigenvectors().transpose();
-
-        // TODO:: home work. 完成舒尔补操作
-        Eigen::MatrixXd Arr = H_marg.block(0, 0, n2, n2);
-        Eigen::MatrixXd Arm = H_marg.block(0, n2, n2, m2);
-        Eigen::MatrixXd Amr = H_marg.block(n2, 0, m2, n2);
-
-        Eigen::MatrixXd tempB = Arm * Amm_inv;
-        Eigen::MatrixXd H_prior = Arr - tempB * Amr;
-
-        std::cout << "---------- TEST Marg: after marg------------"<< std::endl;
-        std::cout << H_prior << std::endl;
     }
 }

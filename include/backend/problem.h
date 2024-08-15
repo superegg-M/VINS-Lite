@@ -16,6 +16,7 @@
 #include <omp.h>
 
 #define USE_OPENMP
+// #define PRINT_INFO
 
 namespace graph_optimization {
     class Problem {
@@ -28,11 +29,6 @@ namespace graph_optimization {
             TMP
         };
         typedef unsigned long ulong;
-        typedef std::unordered_map<unsigned long, std::shared_ptr<Vertex>> HashVertex;
-        // typedef std::map<unsigned long, std::shared_ptr<Vertex>> HashVertex;
-        typedef std::unordered_map<unsigned long, std::shared_ptr<Edge>> HashEdge;
-        typedef std::unordered_multimap<unsigned long, std::shared_ptr<Edge>> HashVertexIdToEdge;
-
         EIGEN_MAKE_ALIGNED_OPERATOR_NEW;
 
     public:
@@ -57,11 +53,6 @@ namespace graph_optimization {
         void set_solver_type(SolverType type) { _solver_type = type; }
         void set_h_prior(const MatXX &h_prior) { _h_prior = h_prior; }
         void set_b_prior(const VecX &b_prior) { _b_prior = b_prior; }
-
-        //test compute prior
-        void test_compute_prior();
-
-        void test_marginalize();
 
     public:
         MatXX &h_prior() { return _h_prior; }
@@ -100,8 +91,6 @@ namespace graph_optimization {
         /// PCG 迭代线性求解器
         VecX PCG_solver(const MatXX &A, const VecX &b, unsigned long max_iter=0);
 
-        bool Solve(unsigned long iterations=10);
-
     protected:
         bool _debug = false;
         SolverType _solver_type {SolverType::LEVENBERG_MARQUARDT};
@@ -130,15 +119,13 @@ namespace graph_optimization {
         MatXX _jt_prior_inv;
         VecX _err_prior;
 
-        // HashVertex _vertices;   ///< 所有的顶点
-        std::vector<std::pair<unsigned long, std::shared_ptr<Vertex>>> _vertices;
-        HashEdge _edges;    ///< 所有的边
-        HashVertexIdToEdge _vertex_to_edge;     ///< pair(顶点id, 与该顶点相连的所有边)
-        HashVertex _vertices_marg;  ///< 需要被边缘化的顶点
+        std::vector<std::shared_ptr<Vertex>> _vertices;
+        std::vector<std::shared_ptr<Edge>> _edges;
+
+        std::unordered_multimap<unsigned long, std::shared_ptr<Edge>> _vertex_to_edge;     ///< pair(顶点id, 与该顶点相连的所有边)
+
 #ifdef USE_OPENMP
         constexpr static unsigned int NUM_THREADS = 8;
-        std::vector<std::pair<unsigned long, std::shared_ptr<Edge>>> _edges_vector;
-        std::vector<std::pair<unsigned long, std::shared_ptr<Vertex>>> _vertices_vector;
 #endif
 
         // Gauss-Newton or Levenberg-Marquardt

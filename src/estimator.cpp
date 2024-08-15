@@ -148,7 +148,11 @@ void Estimator::processImage(const map<int, vector<pair<int, Eigen::Matrix<doubl
     ImageFrame imageframe(image, header);
     imageframe.pre_integration = tmp_pre_integration;
     all_image_frame.insert(make_pair(header, imageframe));
+
+#ifdef PRINT_INFO    
     std::cout << "numbers of all_image_frame: " << all_image_frame.size() << std::endl;
+#endif
+
 #ifdef CAIN_IMU_INTEGRATION
     tmp_pre_integration = new vins::IMUIntegration{acc_0, gyr_0, Bas[frame_count], Bgs[frame_count]};
 #else
@@ -1147,21 +1151,26 @@ void Estimator::problemSolve() {
         }
     }
 
+#ifdef PRINT_INFO  
     std::cout << "t_new_problem = " << t_new_problem.toc() << std::endl;
+#endif  
 
     problem.solve(5);
     // _lambda_last = std::max(problem.get_current_lambda(), 0.);
-    std::cout << "_ordering_landmarks: " << problem._ordering_landmarks << std::endl;
+    // std::cout << "_ordering_landmarks: " << problem._ordering_landmarks << std::endl;
 
     // update bprior_,  Hprior_ do not need update
     if (Hprior_.rows() > 0) {
+        bprior_ = problem.get_b_prior();
+#ifdef PRINT_INFO        
         std::cout << "----------- update bprior -------------\n";
         std::cout << "             before: " << bprior_.norm() << std::endl;
         std::cout << "                     " << errprior_.norm() << std::endl;
-        bprior_ = problem.get_b_prior();
+        
         // errprior_ = problem.get_err_prior();
         std::cout << "             after: " << bprior_.norm() << std::endl;
         std::cout << "                    " << errprior_.norm() << std::endl;
+#endif        
     }
 
     // update parameter
@@ -1254,7 +1263,9 @@ void Estimator::backendOptimization() {
             // }
         }
     }
+#ifdef PRINT_INFO    
     std::cout << "t_whole_marginalization = " << t_whole_marginalization.toc() << std::endl;
+#endif    
 }
 
 
@@ -1358,8 +1369,9 @@ void Estimator::slideWindow() {
             slideWindowNew();
         }
     }
-
+#ifdef PRINT_INFO
     std::cout << "t_margin = " << t_margin.toc() << std::endl;
+#endif    
 }
 
 // real marginalization is removed in solve_ceres()
