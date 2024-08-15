@@ -641,133 +641,11 @@ void Estimator::MargOldFrame() {
     // backend::LossFunction *lossfunction;
     // lossfunction = new backend::CauchyLoss(1.0);
 
-    // step1. 构建 problem
-    // backend::Problem problem(backend::Problem::ProblemType::SLAM_PROBLEM);
-    // vector<shared_ptr<backend::VertexPose>> vertexCams_vec;
-    // vector<shared_ptr<backend::VertexSpeedBias>> vertexVB_vec;
-    // int pose_dim = 0;
     auto &problem = _problem;
     auto &vertexCams_vec = _vertex_pose_vec;
     auto &vertexVB_vec = _vertex_motion_vec;
-    auto &pose_dim = _state_dim;
+//    auto &pose_dim = _state_dim;
 
-    // // 先把 外参数 节点加入图优化，这个节点在以后一直会被用到，所以我们把他放在第一个
-    // shared_ptr<backend::VertexPose> vertexExt(new backend::VertexPose());
-    // {
-    //     Eigen::VectorXd pose(7);
-    //     pose << para_Ex_Pose[0][0], para_Ex_Pose[0][1], para_Ex_Pose[0][2], para_Ex_Pose[0][3], para_Ex_Pose[0][4], para_Ex_Pose[0][5], para_Ex_Pose[0][6];
-    //     vertexExt->SetParameters(pose);
-    //     problem.AddVertex(vertexExt);
-    //     pose_dim += vertexExt->LocalDimension();
-    // }
-
-    // for (int i = 0; i < WINDOW_SIZE + 1; i++)
-    // {
-    //     shared_ptr<backend::VertexPose> vertexCam(new backend::VertexPose());
-    //     Eigen::VectorXd pose(7);
-    //     pose << para_Pose[i][0], para_Pose[i][1], para_Pose[i][2], para_Pose[i][3], para_Pose[i][4], para_Pose[i][5], para_Pose[i][6];
-    //     vertexCam->SetParameters(pose);
-    //     vertexCams_vec.push_back(vertexCam);
-    //     problem.AddVertex(vertexCam);
-    //     pose_dim += vertexCam->LocalDimension();
-
-    //     shared_ptr<backend::VertexSpeedBias> vertexVB(new backend::VertexSpeedBias());
-    //     Eigen::VectorXd vb(9);
-    //     vb << para_SpeedBias[i][0], para_SpeedBias[i][1], para_SpeedBias[i][2],
-    //         para_SpeedBias[i][3], para_SpeedBias[i][4], para_SpeedBias[i][5],
-    //         para_SpeedBias[i][6], para_SpeedBias[i][7], para_SpeedBias[i][8];
-    //     vertexVB->SetParameters(vb);
-    //     vertexVB_vec.push_back(vertexVB);
-    //     problem.AddVertex(vertexVB);
-    //     pose_dim += vertexVB->LocalDimension();
-    // }
-
-    // // IMU
-    // {
-    //     if (pre_integrations[1]->sum_dt < 10.0)
-    //     {
-    //         std::shared_ptr<backend::EdgeImu> imuEdge(new backend::EdgeImu(pre_integrations[1]));
-    //         std::vector<std::shared_ptr<backend::Vertex>> edge_vertex;
-    //         edge_vertex.push_back(vertexCams_vec[0]);
-    //         edge_vertex.push_back(vertexVB_vec[0]);
-    //         edge_vertex.push_back(vertexCams_vec[1]);
-    //         edge_vertex.push_back(vertexVB_vec[1]);
-    //         imuEdge->SetVertex(edge_vertex);
-    //         problem.AddEdge(imuEdge);
-    //     }
-    // }
-
-    // // Visual Factor
-    // {
-    //     int feature_index = -1;
-    //     // 遍历每一个特征
-    //     for (auto &it_per_id : f_manager.feature)
-    //     {
-    //         it_per_id.used_num = it_per_id.feature_per_frame.size();
-    //         if (!(it_per_id.used_num >= 2 && it_per_id.start_frame_id < WINDOW_SIZE - 2))
-    //             continue;
-
-    //         ++feature_index;
-
-    //         int imu_i = it_per_id.start_frame_id, imu_j = imu_i - 1;
-    //         if (imu_i != 0)
-    //             continue;
-
-    //         Vector3d pts_i = it_per_id.feature_per_frame[0].point;
-
-    //         shared_ptr<backend::VertexInverseDepth> verterxPoint(new backend::VertexInverseDepth());
-    //         VecX inv_d(1);
-    //         inv_d << para_Feature[feature_index][0];
-    //         verterxPoint->SetParameters(inv_d);
-    //         problem.AddVertex(verterxPoint);
-
-    //         // 遍历所有的观测
-    //         for (auto &it_per_frame : it_per_id.feature_per_frame)
-    //         {
-    //             imu_j++;
-    //             if (imu_i == imu_j)
-    //                 continue;
-
-    //             Vector3d pts_j = it_per_frame.point;
-
-    //             std::shared_ptr<backend::EdgeReprojection> edge(new backend::EdgeReprojection(pts_i, pts_j));
-    //             std::vector<std::shared_ptr<backend::Vertex>> edge_vertex;
-    //             edge_vertex.push_back(verterxPoint);
-    //             edge_vertex.push_back(vertexCams_vec[imu_i]);
-    //             edge_vertex.push_back(vertexCams_vec[imu_j]);
-    //             edge_vertex.push_back(vertexExt);
-
-    //             edge->SetVertex(edge_vertex);
-    //             edge->SetInformation(project_sqrt_info_.transpose() * project_sqrt_info_);
-
-    //             edge->SetLossFunction(lossfunction);
-    //             problem.AddEdge(edge);
-    //         }
-    //     }
-    // }
-
-//    // 先验
-//    {
-//        // 已经有 Prior 了
-//        if (Hprior_.rows() > 0) {
-//            problem.set_h_prior(Hprior_); // 告诉这个 problem
-//            problem.set_b_prior(bprior_);
-//            // problem.set_err_prior(errprior_);
-//            // problem.set_Jt_prior(Jprior_inv_);
-//            problem.extend_prior_hessian_size(15); // 但是这个 prior 还是之前的维度，需要扩展下装新的pose
-//        } else {
-//            Hprior_ = MatXX(pose_dim, pose_dim);
-//            Hprior_.setZero();
-//            bprior_ = VecX(pose_dim);
-//            bprior_.setZero();
-//            problem.set_h_prior(Hprior_); // 告诉这个 problem
-//            problem.set_b_prior(bprior_);
-//        }
-//    }
-
-    std::vector<std::shared_ptr<graph_optimization::Vertex>> marg_vertex;
-    marg_vertex.push_back(vertexCams_vec[0]);
-    marg_vertex.push_back(vertexVB_vec[0]);
     problem.marginalize(vertexCams_vec[0], vertexVB_vec[0]);
     // problem.marginalize(vertexCams_vec[0], vertexVB_vec[0], _marg_landmarks, _marg_edges);
     Hprior_ = problem.get_h_prior();
@@ -776,72 +654,11 @@ void Estimator::MargOldFrame() {
     // Jprior_inv_ = problem.get_Jt_prior();
 }
 void Estimator::MargNewFrame() {
-
-    // step1. 构建 problem
-    // backend::Problem problem(backend::Problem::ProblemType::SLAM_PROBLEM);
-    // vector<shared_ptr<backend::VertexPose>> vertexCams_vec;
-    // vector<shared_ptr<backend::VertexSpeedBias>> vertexVB_vec;
-    // //    vector<backend::Point3d> points;
-    // int pose_dim = 0;
     auto &problem = _problem;
     auto &vertexCams_vec = _vertex_pose_vec;
     auto &vertexVB_vec = _vertex_motion_vec;
-    auto &pose_dim = _state_dim;
+//    auto &pose_dim = _state_dim;
 
-    // // 先把 外参数 节点加入图优化，这个节点在以后一直会被用到，所以我们把他放在第一个
-    // shared_ptr<backend::VertexPose> vertexExt(new backend::VertexPose());
-    // {
-    //     Eigen::VectorXd pose(7);
-    //     pose << para_Ex_Pose[0][0], para_Ex_Pose[0][1], para_Ex_Pose[0][2], para_Ex_Pose[0][3], para_Ex_Pose[0][4], para_Ex_Pose[0][5], para_Ex_Pose[0][6];
-    //     vertexExt->SetParameters(pose);
-    //     problem.AddVertex(vertexExt);
-    //     pose_dim += vertexExt->LocalDimension();
-    // }
-
-    // for (int i = 0; i < WINDOW_SIZE + 1; i++)
-    // {
-    //     shared_ptr<backend::VertexPose> vertexCam(new backend::VertexPose());
-    //     Eigen::VectorXd pose(7);
-    //     pose << para_Pose[i][0], para_Pose[i][1], para_Pose[i][2], para_Pose[i][3], para_Pose[i][4], para_Pose[i][5], para_Pose[i][6];
-    //     vertexCam->SetParameters(pose);
-    //     vertexCams_vec.push_back(vertexCam);
-    //     problem.AddVertex(vertexCam);
-    //     pose_dim += vertexCam->LocalDimension();
-
-    //     shared_ptr<backend::VertexSpeedBias> vertexVB(new backend::VertexSpeedBias());
-    //     Eigen::VectorXd vb(9);
-    //     vb << para_SpeedBias[i][0], para_SpeedBias[i][1], para_SpeedBias[i][2],
-    //         para_SpeedBias[i][3], para_SpeedBias[i][4], para_SpeedBias[i][5],
-    //         para_SpeedBias[i][6], para_SpeedBias[i][7], para_SpeedBias[i][8];
-    //     vertexVB->SetParameters(vb);
-    //     vertexVB_vec.push_back(vertexVB);
-    //     problem.AddVertex(vertexVB);
-    //     pose_dim += vertexVB->LocalDimension();
-    // }
-
-//    // 先验
-//    {
-//        // 已经有 Prior 了
-//        if (Hprior_.rows() > 0) {
-//            problem.set_h_prior(Hprior_); // 告诉这个 problem
-//            problem.set_b_prior(bprior_);
-//            // problem.set_err_prior(errprior_);
-//            // problem.set_Jt_prior(Jprior_inv_);
-//
-//            problem.extend_prior_hessian_size(15); // 但是这个 prior 还是之前的维度，需要扩展下装新的pose
-//        }
-//        else {
-//            Hprior_ = MatXX(pose_dim, pose_dim);
-//            Hprior_.setZero();
-//            bprior_ = VecX(pose_dim);
-//            bprior_.setZero();
-//        }
-//    }
-
-    std::vector<std::shared_ptr<graph_optimization::Vertex>> marg_vertex;
-    // 把窗口倒数第二个帧 marg 掉
-    // marg_vertex.push_back(vertexCams_vec[WINDOW_SIZE - 1]);
-    // marg_vertex.push_back(vertexVB_vec[WINDOW_SIZE - 1]);
     problem.marginalize(vertexCams_vec[WINDOW_SIZE - 1], vertexVB_vec[WINDOW_SIZE - 1]);
     // problem.marginalize(vertexCams_vec[WINDOW_SIZE - 1], vertexVB_vec[WINDOW_SIZE - 1], _marg_landmarks, _marg_edges);
     Hprior_ = problem.get_h_prior();
@@ -850,19 +667,6 @@ void Estimator::MargNewFrame() {
     // Jprior_inv_ = problem.get_Jt_prior();
 }
 void Estimator::problemSolve() {
-    
-
-
-    // backend::LossFunction *lossfunction;
-    // auto lossfunction = new graph_optimization::CauchyLoss(1.0);
-    //    lossfunction = new backend::TukeyLoss(1.0);
-
-    // step1. 构建 problem
-    // backend::Problem problem(backend::Problem::ProblemType::SLAM_PROBLEM);
-    // vector<shared_ptr<backend::VertexPose>> vertexCams_vec;
-    // vector<shared_ptr<backend::VertexSpeedBias>> vertexVB_vec;
-    // int pose_dim = 0;
-
     TicToc t_new_problem;
 
     _problem = graph_optimization::ProblemSLAM();
@@ -1219,48 +1023,12 @@ void Estimator::backendOptimization() {
         vector2double();
 
         MargOldFrame();
-
-        // std::unordered_map<long, double *> addr_shift; // prior 中对应的保留下来的参数地址
-        // for (int i = 1; i <= WINDOW_SIZE; i++)
-        // {
-        //     addr_shift[reinterpret_cast<long>(para_Pose[i])] = para_Pose[i - 1];
-        //     addr_shift[reinterpret_cast<long>(para_SpeedBias[i])] = para_SpeedBias[i - 1];
-        // }
-        // for (int i = 0; i < NUM_OF_CAM; i++)
-        //     addr_shift[reinterpret_cast<long>(para_Ex_Pose[i])] = para_Ex_Pose[i];
-        // if (ESTIMATE_TD)
-        // {
-        //     addr_shift[reinterpret_cast<long>(para_Td[0])] = para_Td[0];
-        // }
     } else {
         if (Hprior_.rows() > 0) {
 
             vector2double();
 
             MargNewFrame();
-
-            // std::unordered_map<long, double *> addr_shift;
-            // for (int i = 0; i <= WINDOW_SIZE; i++)
-            // {
-            //     if (i == WINDOW_SIZE - 1)
-            //         continue;
-            //     else if (i == WINDOW_SIZE)
-            //     {
-            //         addr_shift[reinterpret_cast<long>(para_Pose[i])] = para_Pose[i - 1];
-            //         addr_shift[reinterpret_cast<long>(para_SpeedBias[i])] = para_SpeedBias[i - 1];
-            //     }
-            //     else
-            //     {
-            //         addr_shift[reinterpret_cast<long>(para_Pose[i])] = para_Pose[i];
-            //         addr_shift[reinterpret_cast<long>(para_SpeedBias[i])] = para_SpeedBias[i];
-            //     }
-            // }
-            // for (int i = 0; i < NUM_OF_CAM; i++)
-            //     addr_shift[reinterpret_cast<long>(para_Ex_Pose[i])] = para_Ex_Pose[i];
-            // if (ESTIMATE_TD)
-            // {
-            //     addr_shift[reinterpret_cast<long>(para_Td[0])] = para_Td[0];
-            // }
         }
     }
 #ifdef PRINT_INFO    
