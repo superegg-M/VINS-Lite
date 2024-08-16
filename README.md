@@ -4,7 +4,7 @@
 **描述**：
 该代码基于 VINS-Mono与VINS-Course，不依赖 ROS。在代码中实现了一个基于Eigen的轻量级图优化求解器，用于求解VINS的后端优化问题，该求解器目前不支持对顶点和边的删除操作，每次优化前必选重新构建问题。该代码支持 Ubuntu.
 
-___
+---
 
 ### 安装依赖项：
 
@@ -18,8 +18,6 @@ ___
 
 5. boost
 
-___
-
 ### 编译代码
 
 ```c++
@@ -31,8 +29,6 @@ cd build
 cmake ..
 make -j4
 ```
-
-___
 
 ### 运行
 #### 1. CurveFitting Example to Verify Our Solver.
@@ -54,18 +50,16 @@ cd build
 
 <https://github.com/HeYijia/vio_data_simulation>
 
-___
-
 ### Licence
 
 The source code is released under GPLv3 license.
 
 如果发现了代码中存在的bug以及可改进的方向, 请联系: Cain Hu <cainhsui@gmail.com>.
 
-***
-
 ### 参考
 
-[VINS-Mono](https://github.com/HKUST-Aerial-Robotics/VINS-Mono) 
- [VINS-Course](https://github.com/HeYijia/VINS-Course)
+1. [VINS-Mono](https://github.com/HKUST-Aerial-Robotics/VINS-Mono)
+2. [VINS-Course](https://github.com/HeYijia/VINS-Course)
+
+Loading
 
