@@ -3,8 +3,7 @@
 
 **描述**：
 该代码基于 VINS-Mono与VINS-Course，不依赖 ROS。在代码中实现了一个基于Eigen的轻量级图优化求解器，用于求解VINS的后端优化问题，该求解器目前不支持对顶点和边的删除操作，每次优化前必选重新构建问题。该代码支持 Ubuntu.
-
----
+______
 
 ### 安装依赖项：
 
@@ -61,5 +60,5 @@ The source code is released under GPLv3 license.
 1. [VINS-Mono](https://github.com/HKUST-Aerial-Robotics/VINS-Mono)
 2. [VINS-Course](https://github.com/HeYijia/VINS-Course)
 
-Loading
+Loading...
 
