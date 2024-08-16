@@ -60,5 +60,4 @@ The source code is released under GPLv3 license.
 1. [VINS-Mono](https://github.com/HKUST-Aerial-Robotics/VINS-Mono)
 2. [VINS-Course](https://github.com/HeYijia/VINS-Course)
 
-Loading...
 
