@@ -214,15 +214,13 @@ namespace graph_optimization {
         // Marginalize掉pose和motion
         ulong marginalized_size = vertex_pose->local_dimension() + vertex_motion->local_dimension();
         ulong reserve_size = state_dim - marginalized_size;
-        MatXX Hmr = h_state_schur.block(reserve_size, 0, marginalized_size, reserve_size);
 
         MatXX temp_H(MatXX::Zero(marginalized_size, reserve_size));  // Hmm^-1 * Hrm^T
 //        VecX temp_b(VecX::Zero(marginalized_size, 1));   // Hmm^-1 * bm
 
         if (marginalized_size == 1) {
-            unsigned index = reserve_size;
-            if (h_state_schur(index, index) > 1e-12) {
-                temp_H = Hmr / h_state_schur(index, index);
+            if (h_state_schur(reserve_size, reserve_size) > 1e-12) {
+                temp_H = h_state_schur.block(reserve_size, 0, marginalized_size, reserve_size) / h_state_schur(reserve_size, reserve_size);
 //                temp_b = b_state_schur.tail(marginalized_size) / h_state_schur(index, index);
             } else {
                 temp_H.setZero();
@@ -232,7 +230,7 @@ namespace graph_optimization {
         } else {
             auto &&Hmm_ldlt = h_state_schur.block(reserve_size, reserve_size, marginalized_size, marginalized_size).ldlt();
             if (Hmm_ldlt.info() == Eigen::Success) {
-                temp_H = Hmm_ldlt.solve(Hmr);
+                temp_H = Hmm_ldlt.solve(h_state_schur.block(reserve_size, 0, marginalized_size, reserve_size));
 //                temp_b = Hmm_ldlt.solve(b_state_schur.tail(marginalized_size));
             } else {
                 temp_H.setZero();
@@ -243,24 +241,22 @@ namespace graph_optimization {
         // (Hrr - Hrm * Hmm^-1 * Hmr) * dxp = br - Hrm * Hmm^-1 * bm
 #ifdef USE_OPENMP
         // Hrr - Hrm * Hmm^-1 * Hmr
-        MatXX h_state_schur_block = h_state_schur.block(0, 0, reserve_size, reserve_size);
+        MatXX h_state_schur_bp = h_state_schur;
         h_state_schur = MatXX::Zero(reserve_size, reserve_size);
-#pragma omp parallel for num_threads(NUM_THREADS) default(none) shared(h_state_schur, Hmr, temp_H, reserve_size)
+#pragma omp parallel for num_threads(NUM_THREADS) default(none) shared(h_state_schur, h_state_schur_bp, temp_H, reserve_size, marginalized_size)
         for (ulong i = 0; i < reserve_size; ++i) {
-            h_state_schur(i, i) = -Hmr.col(i).dot(temp_H.col(i));
+            h_state_schur(i, i) = -temp_H.col(i).dot(h_state_schur_bp.col(i).tail(marginalized_size));
             for (ulong j = i + 1; j < reserve_size; ++j) {
-                h_state_schur(i, j) = -Hmr.col(i).dot(temp_H.col(j));
+                h_state_schur(i, j) = -temp_H.col(j).dot(h_state_schur_bp.col(i).tail(marginalized_size));
                 h_state_schur(j, i) = h_state_schur(i, j);
             }
         }
-        h_state_schur += h_state_schur_block;
+        h_state_schur += h_state_schur_bp.block(0, 0, reserve_size, reserve_size);
 #else
 
-        // Hrr - Hrm * Hmm^-1 * Hmr
+        // (Hrr - Hrm * Hmm^-1 * Hmr) * dxp = br - Hrm * Hmm^-1 * bm
         h_state_schur = h_state_schur.block(0, 0, reserve_size, reserve_size) - h_state_schur.block(0, reserve_size, reserve_size, marginalized_size) * temp_H;
-
 #endif
-        // br - Hrm * Hmm^-1 * bm
         b_state_schur = b_state_schur.head(reserve_size) - temp_H.transpose() * b_state_schur.tail(marginalized_size);
 
         _h_prior.topLeftCorner(reserve_size, reserve_size) = h_state_schur;
@@ -275,6 +271,10 @@ namespace graph_optimization {
     * marginalize 所有和 frame 相连的 edge: imu factor, projection factor
     * */
     bool ProblemSLAM::marginalize(const std::shared_ptr<Vertex>& vertex_pose, const std::shared_ptr<Vertex>& vertex_motion) {
+        for (auto &vertex : _pose_vertices) {
+            std::cout << "vertex: id = " << vertex->id() << ", ordering_id = " << vertex->ordering_id() << std::endl;
+        }
+
         // 重新计算一篇ordering
         // initialize_ordering();
         ulong state_dim = _ordering_poses;
@@ -477,6 +477,10 @@ namespace graph_optimization {
             ulong idx = vertex->ordering_id();
             ulong dim = vertex->local_dimension();
             marginalized_state_dim += dim;
+
+            if (idx + dim == state_dim) {
+                return;
+            }
 
             // 将 row i 移动矩阵最下面
             Eigen::MatrixXd temp_rows = h_state_schur.block(idx, 0, dim, state_dim);
