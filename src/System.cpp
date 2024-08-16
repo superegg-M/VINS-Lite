@@ -335,7 +335,8 @@ void System::ProcessBackEnd()
             }
             TicToc t_processImage;
             estimator.processImage(image, img_msg->header);
-            
+            static double dt_mean = 0.;
+            static double n = 1.;
             if (estimator.solver_flag == Estimator::SolverFlag::NON_LINEAR)
             {
                 Vector3d p_wi;
@@ -344,7 +345,10 @@ void System::ProcessBackEnd()
                 p_wi = estimator.Ps[WINDOW_SIZE];
                 vPath_to_draw.push_back(p_wi);
                 double dStamp = estimator.Headers[WINDOW_SIZE];
-                cout << "1 BackEnd processImage dt: " << fixed << t_processImage.toc() << " stamp: " <<  dStamp << " p_wi: " << p_wi.transpose() << endl;
+                double dt = t_processImage.toc();
+                dt_mean += (dt - dt_mean) / n;
+                n = std::min(n + 1., 100.);
+                cout << "1 BackEnd processImage dt: " << fixed << t_processImage.toc() << " mean dt:" << dt_mean << " stamp: " <<  dStamp << " p_wi: " << p_wi.transpose() << endl;
                 ofs_pose << fixed << dStamp << " " << p_wi.transpose() << " " << q_wi.coeffs().transpose() << endl;
             }
         }

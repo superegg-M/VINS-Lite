@@ -441,10 +441,10 @@ namespace graph_optimization {
             // Hll^-1 * bl
 //            VecX temp_b = Hll_inv.cwiseProduct(b_state_landmark.tail(marginalized_landmark_size));
 
-            // (Hpp - Hsl * Hll^-1 * Hlp) * dxp = bp - Hsl * Hll^-1 * bl
+            // (Hss - Hsl * Hll^-1 * Hlp) * dxp = bp - Hsl * Hll^-1 * bl
 #ifdef USE_OPENMP
             h_state_schur = MatXX::Zero(state_dim, state_dim);
-#pragma omp parallel for num_threads(NUM_THREADS) default(none) shared(h_state_schur, temp_H, state_dim)
+#pragma omp parallel for num_threads(NUM_THREADS) default(none) shared(h_state_landmark, h_state_schur, temp_H, state_dim, marginalized_landmark_size)
             for (ulong i = 0; i < state_dim; ++i) {
                 h_state_schur(i, i) = -temp_H.col(i).dot(h_state_landmark.col(i).tail(marginalized_landmark_size));
                 for (ulong j = i + 1; j < state_dim; ++j) {
@@ -534,30 +534,23 @@ namespace graph_optimization {
 
             // (Hrr - Hrm * Hmm^-1 * Hmr) * dxp = br - Hrm * Hmm^-1 * bm
 #ifdef USE_OPENMP
-            MatXX h_state_schur_block = h_state_schur.block(0, 0, reserve_size, reserve_size);
+            MatXX h_state_schur_bp = h_state_schur;
             h_state_schur = MatXX::Zero(reserve_size, reserve_size);
-#pragma omp parallel for num_threads(NUM_THREADS) default(none) shared(h_state_schur, Hrm, temp_H, reserve_size)
+#pragma omp parallel for num_threads(NUM_THREADS) default(none) shared(h_state_schur, h_state_schur_bp, temp_H, reserve_size, marginalized_size)
             for (ulong i = 0; i < reserve_size; ++i) {
-                h_state_schur(i, i) = -temp_H.col(i).dot(h_state_schur.col(i).tail(marginalized_size));
+                h_state_schur(i, i) = -temp_H.col(i).dot(h_state_schur_bp.col(i).tail(marginalized_size));
                 for (ulong j = i + 1; j < reserve_size; ++j) {
-                    h_state_schur(i, j) = -temp_H.col(j).dot(h_state_schur.col(i).tail(marginalized_size));
+                    h_state_schur(i, j) = -temp_H.col(j).dot(h_state_schur_bp.col(i).tail(marginalized_size));
                     h_state_schur(j, i) = h_state_schur(i, j);
                 }
             }
-            h_state_schur += h_state_schur_block;
+            h_state_schur += h_state_schur_bp.block(0, 0, reserve_size, reserve_size);
 #else
 
             // (Hrr - Hrm * Hmm^-1 * Hmr) * dxp = br - Hrm * Hmm^-1 * bm
-            h_state_schur = h_state_schur.block(0, 0, reserve_size, reserve_size) - Hrm * temp_H;
-            // for (ulong i = 0; i < reserve_size; ++i) {
-            //     h_state_schur(i, i) -= Hrm.row(i).dot(temp_H.col(i));
-            //     for (ulong j = i + 1; j < reserve_size; ++j) {
-            //         h_state_schur(i, j) -= Hrm.row(i).dot(temp_H.col(j));
-            //         h_state_schur(j, i) = h_state_schur(i, j);
-            //     }
-            // }
+            h_state_schur = h_state_schur.block(0, 0, reserve_size, reserve_size) - h_state_schur.block(0, reserve_size, reserve_size, marginalized_size) * temp_H;
 #endif
-            b_state_schur = b_state_schur.head(0, reserve_size) - temp_H.transpose() * b_state_schur.tail(marginalized_size);
+            b_state_schur = b_state_schur.head(reserve_size) - temp_H.transpose() * b_state_schur.tail(marginalized_size);
 
             state_dim = reserve_size;
         };
