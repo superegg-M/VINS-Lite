@@ -62,7 +62,7 @@ The source code is released under GPLv3 license.
 
 如果发现了代码中存在的bug以及可改进的方向, 请联系: Cain Hu <cainhsui@gmail.com>.
 
----
+***
 
 ### 参考
 
