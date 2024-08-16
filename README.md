@@ -1,26 +1,27 @@
-# Vins Course
-**作者**：贺一家，高翔，崔华坤，赵松
+# Vins Lite
+**作者**：许家仁
 
 **描述**：
-这是一个用于深蓝学院教学的代码，她基于 VINS-Mono 框架，但不依赖 ROS, Ceres, G2o。这个代码非常基础，目的在于演示仅基于 Eigen 的后端 LM 算法，滑动窗口算法，鲁棒核函数等等 SLAM 优化中常见的算法。
-该代码支持 Ubuntu or Mac OS.
+该代码基于 VINS-Mono与VINS-Course，不依赖 ROS。在代码中实现了一个基于Eigen的轻量级图优化求解器，用于求解VINS的后端优化问题，该求解器目前不支持对顶点和边的删除操作，每次优化前必选重新构建问题。该代码支持 Ubuntu.
 
 ### 安装依赖项：
 
 1. pangolin: <https://github.com/stevenlovegrove/Pangolin>
 
-2. opencv
+2. opencv-3.4.0
 
-3. Eigen
+3. Eigen-3.3.9
 
-4. Ceres: vins 初始化部分使用了 ceres 做 sfm，所以我们还是需要依赖 ceres. 
+4. Ceres-1.14.0: 用于VINS的初始化中的SfM。
+
+5. boost
 
 ### 编译代码
 
 ```c++
-mkdir vins_course
-cd vins_course
-git clone https://github.com/HeYijia/VINS-Course
+mkdir vins_lite
+cd vins_lite
+git clone git@github.com:CainHu/VINS-Lite.git
 mkdir build 
 cd build
 cmake ..
@@ -37,28 +38,24 @@ cd build
 #### 2. VINs-Mono on Euroc Dataset
 ```c++
 cd build
-../bin/run_euroc /home/dataset/EuRoC/MH-05/mav0/ ../config/
 ../bin/run_euroc /home/cain/mav0/ ../config/
 ```
 ![vins](doc/vins.gif)
 
-#### 3. VINs-Mono on Simulation Dataset (project homework)
+#### 3. VINs-Mono on Simulation Dataset
 
-you can use this code to generate vio data.
+可以使用以下代码生成的vio数据来进行调试。
 
-```c++
-https://github.com/HeYijia/vio_data_simulation
-```
+<https://github.com/HeYijia/vio_data_simulation>
 
 ### Licence
 
 The source code is released under GPLv3 license.
 
-We are still working on improving the code reliability. For any technical issues, please contact Yijia He <heyijia_2013@163.com> , Xiang Gao <https://github.com/gaoxiang12> or Huakun Cui<https://github.com/StevenCui>.
+如果发现了代码中存在的bug以及可改进的方向, 请联系: Cain Hu <cainhsui@gmail.com>.
 
-For commercial inquiries, please contact Song Zhao <zhaosong@shenlanxueyuan.com>
+### 参考
 
-### 感谢
-
-我们使用了港科大沈老师组的 [VINS-Mono](https://github.com/HKUST-Aerial-Robotics/VINS-Mono) 作为基础代码，非常感谢该组的工作。
+[VINS-Mono](https://github.com/HKUST-Aerial-Robotics/VINS-Mono)
+[VINS-Course](https://github.com/HeYijia/VINS-Course)
 
