@@ -125,7 +125,7 @@ namespace graph_optimization {
         std::unordered_multimap<unsigned long, std::shared_ptr<Edge>> _vertex_to_edge;     ///< pair(顶点id, 与该顶点相连的所有边)
 
 #ifdef USE_OPENMP
-        constexpr static unsigned int NUM_THREADS = 8;
+        // constexpr static unsigned int NUM_THREADS = 8;
 #endif
 
         // Gauss-Newton or Levenberg-Marquardt

@@ -807,10 +807,10 @@ void Estimator::problemSolve() {
         unsigned int feature_index = 0;
         // 遍历每一个特征
 #ifdef USE_OPENMP
-        static vector<shared_ptr<graph_optimization::VertexInverseDepth>> vertex_vec[FeatureManager::NUM_THREADS];
-        static vector<shared_ptr<graph_optimization::EdgeReprojection>> edge_vec[FeatureManager::NUM_THREADS];
-        static vector<shared_ptr<graph_optimization::Vertex>> marg_landmarks_vec[FeatureManager::NUM_THREADS];
-        static vector<shared_ptr<graph_optimization::Edge>> marg_edges_vec[FeatureManager::NUM_THREADS];
+        static vector<shared_ptr<graph_optimization::VertexInverseDepth>> vertex_vec[NUM_THREADS];
+        static vector<shared_ptr<graph_optimization::EdgeReprojection>> edge_vec[NUM_THREADS];
+        static vector<shared_ptr<graph_optimization::Vertex>> marg_landmarks_vec[NUM_THREADS];
+        static vector<shared_ptr<graph_optimization::Edge>> marg_edges_vec[NUM_THREADS];
         for (auto &vertices : vertex_vec) {
             vertices.clear();
         }
@@ -823,7 +823,7 @@ void Estimator::problemSolve() {
         for (auto &edges : marg_edges_vec) {
             edges.clear();
         }
-#pragma omp parallel for num_threads(FeatureManager::NUM_THREADS)
+#pragma omp parallel for num_threads(NUM_THREADS)
         for (size_t n = 0; n < f_manager.features_vector.size(); ++n) {
             // 由于第WINDOW_SIZE帧是new frame, 其是否为key frame是不定的, 而第WINDOW_SIZE - 1帧是否为key frame也是不定的
             // 第WINDOW_SIZE - 2帧才必定是key frame, 而landmark至少需被2个key frame观测到

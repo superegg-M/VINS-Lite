@@ -77,6 +77,8 @@ ADD_LIBRARY(MyVio SHARED
     src/backend/imu_integration.cc
     )
 
+target_compile_definitions(MyVio PRIVATE -DNUM_THREADS=8)    
+
 target_link_libraries(MyVio  
   ${OpenCV_LIBS}  
   ${CERES_LIBRARIES}

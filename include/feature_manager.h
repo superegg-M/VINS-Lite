@@ -113,7 +113,7 @@ public:
 //    list<FeaturePerId> feature;
     unordered_map<unsigned long, FeaturePerId> features_map;
 #ifdef USE_OPENMP
-    constexpr static unsigned int NUM_THREADS = 8;
+    // constexpr static unsigned int NUM_THREADS = 8;
     vector<pair<unsigned long, FeaturePerId *>> features_vector;
 #endif
     vector<unsigned long> feature_id_erase;
