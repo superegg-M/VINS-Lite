@@ -18,12 +18,14 @@ namespace graph_optimization {
 
     /*
     * marginalize 所有和 frame 相连的 edge: imu factor, projection factor
-    * 假设vertex_pose和vertex_motion, 分别排序在vertex的倒数第二与倒数第一位
+    * vertex排序必须满足: extra, pose[0], motion[0], ..., pose[WINDOWS_SIZE], motion[WINDOWS_SIZE], pose[marg_index], motion[marg_index]
+    * 若不满足, 则需要外部调整_H_prior和_b_prior的顺序, 以适应vertex的排序
     * */
     bool ProblemSLAM::marginalize(const std::shared_ptr<Vertex>& vertex_pose, 
                                   const std::shared_ptr<Vertex>& vertex_motion,
                                   const std::vector<std::shared_ptr<Vertex>> &vertices_landmark,
-                                  const std::vector<std::shared_ptr<Edge>> &edges) {                 
+                                  const std::vector<std::shared_ptr<Edge>> &edges,
+                                  bool marg_oldest) {                 
 
         // 计算所需marginalize的edge的hessian
         ulong state_dim = _ordering_poses;
@@ -204,8 +206,43 @@ namespace graph_optimization {
 
         // 叠加之前的先验
         if(_h_prior.rows() > 0) {
-            h_state_schur += _h_prior;
-            b_state_schur += _b_prior;
+            unsigned marg_f_ind;
+            unsigned marg_f_dim;
+            unsigned marg_ind;
+            unsigned marg_dim;
+            unsigned marg_b_ind;
+            unsigned marg_b_dim;
+            unsigned res_dim;
+            if (marg_oldest) {
+                marg_f_ind = 0;
+                marg_f_dim = 6;
+                marg_ind = 6;
+                marg_dim = 15;
+                marg_b_ind = 21;
+                marg_b_dim = state_dim - 21;
+                res_dim = state_dim - 15;
+            } else {
+                marg_f_ind = 0;
+                marg_f_dim = state_dim - 30;
+                marg_ind = state_dim - 30;
+                marg_dim = 15;
+                marg_b_ind = state_dim - 15;;
+                marg_b_dim = 15;
+                res_dim = state_dim - 15;
+            }
+            h_state_schur.block(0, 0, marg_f_dim, marg_f_dim) += _h_prior.block(marg_f_ind, marg_f_ind, marg_f_dim, marg_f_dim);
+            h_state_schur.block(0, marg_f_dim, marg_f_dim, marg_b_dim) += _h_prior.block(marg_f_ind, marg_b_ind, marg_f_dim, marg_b_dim);
+            h_state_schur.block(0, res_dim, marg_f_dim, marg_dim) += _h_prior.block(marg_f_ind, marg_ind, marg_f_dim, marg_dim);
+            h_state_schur.block(marg_f_dim, 0, marg_b_dim, marg_f_dim) += _h_prior.block(marg_b_ind, marg_f_ind, marg_b_dim, marg_f_dim);
+            h_state_schur.block(marg_f_dim, marg_f_dim, marg_b_dim, marg_b_dim) += _h_prior.block(marg_b_ind, marg_b_ind, marg_b_dim, marg_b_dim);
+            h_state_schur.block(marg_f_dim, res_dim, marg_b_dim, marg_dim) += _h_prior.block(marg_b_ind, marg_ind, marg_b_dim, marg_dim);
+            h_state_schur.block(res_dim, 0, marg_dim, marg_f_dim) += _h_prior.block(marg_ind, marg_f_ind, marg_dim, marg_f_dim);
+            h_state_schur.block(res_dim, marg_f_dim, marg_dim, marg_b_dim) += _h_prior.block(marg_ind, marg_b_ind, marg_dim, marg_b_dim);
+            h_state_schur.block(res_dim, res_dim, marg_dim, marg_dim) += _h_prior.block(marg_ind, marg_ind, marg_dim, marg_dim);
+            
+            b_state_schur.head(marg_f_dim) += _b_prior.head(marg_f_dim);
+            b_state_schur.segment(marg_f_dim, marg_b_dim) += _b_prior.tail(marg_b_dim);
+            b_state_schur.tail(marg_dim) += _b_prior.segment(marg_f_dim, marg_dim);
         } else {
             _h_prior = MatXX::Zero(state_dim, state_dim);
             _b_prior = VecX::Zero(state_dim, 1);
@@ -269,12 +306,218 @@ namespace graph_optimization {
 
     /*
     * marginalize 所有和 frame 相连的 edge: imu factor, projection factor
+    * vertex排序必须满足: extra, pose[0], motion[0], pose[1], motion[1], ..., pose[WINDOWS_SIZE], motion[WINDOWS_SIZE]
+    * 若不满足, 则需要外部调整_H_prior和_b_prior的顺序, 以适应vertex的排序
     * */
-    bool ProblemSLAM::marginalize(const std::shared_ptr<Vertex>& vertex_pose, const std::shared_ptr<Vertex>& vertex_motion) {
-        for (auto &vertex : _pose_vertices) {
-            std::cout << "vertex: id = " << vertex->id() << ", ordering_id = " << vertex->ordering_id() << std::endl;
+    bool ProblemSLAM::marginalize(const std::shared_ptr<Vertex>& vertex_pose, 
+                                  const std::shared_ptr<Vertex>& vertex_motion,
+                                  const std::vector<std::shared_ptr<Vertex>> &marginalized_landmarks,
+                                  const std::vector<std::shared_ptr<Edge>> &marginalized_edges) {
+        // 重新计算一篇ordering
+        // initialize_ordering();
+        ulong state_dim = _ordering_poses;
+        ulong marginalized_landmarks_size = marginalized_landmarks.size();
+        ulong cols = state_dim + marginalized_landmarks_size;
+
+        // 为H加上eps, 避免出现对角线元素为0的情况
+        MatXX h_state_landmark = VecX::Constant(cols, 1, 1e-6).asDiagonal();
+        VecX b_state_landmark(VecX::Zero(cols));
+
+        // 修改landmark的ordering_id, 方便hessian的计算
+        for (unsigned i = 0; i < marginalized_landmarks_size; ++i) {
+            marginalized_landmarks[i]->set_ordering_id(state_dim + i);
         }
 
+#ifdef USE_OPENMP
+        MatXX Hs[NUM_THREADS];       ///< Hessian矩阵
+        VecX bs[NUM_THREADS];       ///< 负梯度
+        for (unsigned int i = 0; i < NUM_THREADS; ++i) {
+            Hs[i] = MatXX::Zero(cols, cols);
+            bs[i] = VecX::Zero(cols);
+        }
+
+#pragma omp parallel for num_threads(NUM_THREADS) default(none) shared(marginalized_edges, Hs, bs)
+        for (size_t n = 0; n < marginalized_edges.size(); ++n) {
+            unsigned int index = omp_get_thread_num();
+
+            auto &edge = marginalized_edges[n];
+            auto &&jacobians = edge->jacobians();
+            auto &&vertices = edge->vertices();
+            assert(jacobians.size() == vertices.size());
+
+            // 计算edge的鲁棒权重
+            double drho;
+            MatXX robust_information;
+            VecX robust_residual;
+            edge->robust_information(drho, robust_information, robust_residual);
+
+            for (size_t i = 0; i < vertices.size(); ++i) {
+                auto &&v_i = vertices[i];
+                if (v_i->is_fixed()) continue;
+
+                auto &&jacobian_i = jacobians[i];
+                if (jacobian_i.rows() == 0) continue;
+
+                ulong index_i = v_i->ordering_id();
+                ulong dim_i = v_i->local_dimension();
+
+                MatXX JtW = jacobian_i.transpose() * robust_information;
+                for (size_t j = i; j < vertices.size(); ++j) {
+                    auto &&v_j = vertices[j];
+                    if (v_j->is_fixed()) continue;
+
+                    auto &&jacobian_j = jacobians[j];
+                    if (jacobian_j.rows() == 0) continue;
+
+                    ulong index_j = v_j->ordering_id();
+                    ulong dim_j = v_j->local_dimension();
+
+                    MatXX hessian = JtW * jacobian_j;
+
+//                    assert(hessian.rows() == v_i->local_dimension() && hessian.cols() == v_j->local_dimension());
+                    // 所有的信息矩阵叠加起来
+                    Hs[index].block(index_i, index_j, dim_i, dim_j).noalias() += hessian;
+                    if (j != i) {
+                        // 对称的下三角
+                        Hs[index].block(index_j, index_i, dim_j, dim_i).noalias() += hessian.transpose();
+                    }
+                }
+                bs[index].segment(index_i, dim_i).noalias() -= jacobian_i.transpose() * robust_residual;
+            }
+        }
+
+        for (unsigned int i = 0; i < NUM_THREADS; ++i) {
+            h_state_landmark += Hs[i];
+            b_state_landmark += bs[i];
+        }
+#else
+        for (size_t n = 0; n < marginalized_edges.size(); ++n) {
+            auto &edge = marginalized_edges[n];
+            // 若曾经solve problem, 则无需再次计算
+            // edge->compute_residual();
+            // edge->compute_jacobians();
+            auto &&jacobians = edge->jacobians();
+            auto &&vertices = edge->vertices();
+
+            assert(jacobians.size() == vertices.size());
+
+            // 计算edge的鲁棒权重
+            double drho;
+            MatXX robust_information;
+            VecX robust_residual;
+            edge->robust_information(drho, robust_information, robust_residual);
+
+            for (size_t i = 0; i < vertices.size(); ++i) {
+                auto &&v_i = vertices[i];
+                if (v_i->is_fixed()) continue;
+
+                auto &&jacobian_i = jacobians[i];
+                if (jacobian_i.rows() == 0) continue;
+
+                ulong index_i = v_i->ordering_id();
+                ulong dim_i = v_i->local_dimension();
+
+                MatXX JtW = jacobian_i.transpose() * robust_information;
+                for (size_t j = i; j < vertices.size(); ++j) {
+                    auto &&v_j = vertices[j];
+                    if (v_j->is_fixed()) continue;
+
+                    auto &&jacobian_j = jacobians[j];
+                    if (jacobian_j.rows() == 0) continue;
+
+                    ulong index_j = v_j->ordering_id();
+                    ulong dim_j = v_j->local_dimension();
+
+                    MatXX hessian = JtW * jacobian_j;
+
+                    assert(hessian.rows() == v_i->local_dimension() && hessian.cols() == v_j->local_dimension());
+                    // 所有的信息矩阵叠加起来
+                    h_state_landmark.block(index_i, index_j, dim_i, dim_j) += hessian;
+                    if (j != i) {
+                        // 对称的下三角
+                        h_state_landmark.block(index_j, index_i, dim_j, dim_i) += hessian.transpose();
+                    }
+                }
+                b_state_landmark.segment(index_i, dim_i) -= jacobian_i.transpose() * robust_residual;
+            }
+        }
+#endif
+
+
+        // marginalize与边连接的landmark
+        MatXX h_state_schur;
+        VecX b_state_schur;
+        if (marginalized_landmarks_size > 0) {
+            // Hll
+            VecX Hll = h_state_landmark.block(state_dim, state_dim, marginalized_landmarks_size, marginalized_landmarks_size).diagonal();
+            // 由于叠加了eps, 所以能够保证Hll可逆
+            VecX Hll_inv = Hll.array().inverse();
+
+            // Hll^-1 * Hsl^T
+            MatXX temp_H = Hll_inv.asDiagonal() * h_state_landmark.block(state_dim, 0, marginalized_landmarks_size, state_dim);
+            // Hll^-1 * bl
+//            VecX temp_b = Hll_inv.cwiseProduct(b_state_landmark.tail(marginalized_landmark_size));
+
+            // (Hss - Hsl * Hll^-1 * Hlp) * dxp = bp - Hsl * Hll^-1 * bl
+#ifdef USE_OPENMP
+            h_state_schur = MatXX::Zero(state_dim, state_dim);
+#pragma omp parallel for num_threads(NUM_THREADS) default(none) shared(h_state_landmark, h_state_schur, temp_H, state_dim, marginalized_landmarks_size)
+            for (ulong i = 0; i < state_dim; ++i) {
+                h_state_schur(i, i) = -temp_H.col(i).dot(h_state_landmark.col(i).tail(marginalized_landmarks_size));
+                for (ulong j = i + 1; j < state_dim; ++j) {
+                    h_state_schur(i, j) = -temp_H.col(j).dot(h_state_landmark.col(i).tail(marginalized_landmarks_size));
+                    h_state_schur(j, i) = h_state_schur(i, j);
+                }
+            }
+            h_state_schur += h_state_landmark.block(0, 0, state_dim, state_dim);
+#else
+            h_state_schur = h_state_landmark.block(0, 0, state_dim, state_dim) - h_state_landmark.block(0, state_dim, state_dim, marginalized_landmark_size) * temp_H;
+#endif
+            b_state_schur = b_state_landmark.head(state_dim) - temp_H.transpose() * b_state_landmark.tail(marginalized_landmarks_size);
+        } else {
+            h_state_schur = h_state_landmark;
+            b_state_schur = b_state_landmark;
+        }
+
+        // 叠加之前的先验
+        if(_h_prior.rows() > 0) {
+            h_state_schur += _h_prior;
+            b_state_schur += _b_prior;
+        } else {
+            _h_prior = MatXX::Zero(state_dim, state_dim);
+            _b_prior = VecX::Zero(state_dim, 1);
+        }
+
+        // 边缘化
+        ulong marg_index = vertex_pose->ordering_id();
+        ulong marg_dim = vertex_pose->local_dimension() + vertex_motion->local_dimension();
+        ulong res_index = marg_index + marg_dim;
+        ulong res_dim = state_dim - res_index;
+
+        auto &&h_11_ldlt = h_state_schur.block(marg_index, marg_index, marg_dim, marg_dim).ldlt();
+        MatXX h_10_hat = h_11_ldlt.solve(h_state_schur.block(marg_index, 0, marg_dim, marg_index));
+        MatXX h_12_hat = h_11_ldlt.solve(h_state_schur.block(marg_index, res_index, marg_dim, res_dim));
+
+        _h_prior.block(0, 0, marg_index, marg_index).noalias() = h_state_schur.block(0, 0, marg_index, marg_index) 
+                                                                 - h_state_schur.block(0, marg_index, marg_index, marg_dim) * h_10_hat;
+        _h_prior.block(0, marg_index, marg_index, res_dim).noalias() = h_state_schur.block(0, res_index, marg_index, res_dim) 
+                                                                       - h_state_schur.block(0, marg_index, marg_index, marg_dim) * h_12_hat;
+        _h_prior.block(marg_index, 0, res_dim, marg_index).noalias() = _h_prior.block(0, marg_index, marg_index, res_dim).transpose();
+        _h_prior.block(marg_index, marg_index, res_dim, res_dim).noalias() = h_state_schur.block(res_index, res_index, res_dim, res_dim) 
+                                                                             - h_state_schur.block(res_index, marg_index, res_dim, marg_dim) * h_12_hat;
+
+        _b_prior.head(marg_index) = b_state_schur.head(marg_index) - h_10_hat.transpose() * b_state_schur.segment(marg_index, marg_dim);
+        _b_prior.segment(marg_index, res_dim) = b_state_schur.tail(res_dim) - h_12_hat.transpose() * b_state_schur.segment(marg_index, marg_dim);
+
+        return true;
+    }
+
+
+
+    /*
+    * marginalize 所有和 frame 相连的 edge: imu factor, projection factor
+    * */
+    bool ProblemSLAM::marginalize(const std::shared_ptr<Vertex>& vertex_pose, const std::shared_ptr<Vertex>& vertex_motion) {
         // 重新计算一篇ordering
         // initialize_ordering();
         ulong state_dim = _ordering_poses;
@@ -298,13 +541,13 @@ namespace graph_optimization {
             }
         }
 
-#ifdef USE_OPENMP
-        std::vector<std::pair<unsigned long, shared_ptr<Vertex>>> marginalized_landmark_vector;
-        marginalized_landmark_vector.reserve(marginalized_landmark.size());
-        for (auto &landmark : marginalized_landmark) {
-            marginalized_landmark_vector.emplace_back(landmark);
-        }
-#endif
+// #ifdef USE_OPENMP
+//         std::vector<std::pair<unsigned long, shared_ptr<Vertex>>> marginalized_landmark_vector;
+//         marginalized_landmark_vector.reserve(marginalized_landmark.size());
+//         for (auto &landmark : marginalized_landmark) {
+//             marginalized_landmark_vector.emplace_back(landmark);
+//         }
+// #endif
 
         // 计算所需marginalize的edge的hessian
         ulong cols = state_dim + marginalized_landmark_size;
