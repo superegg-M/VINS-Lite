@@ -20,6 +20,11 @@ namespace graph_optimization {
                          const std::shared_ptr<Vertex>& vertex_motion,
                          const std::vector<std::shared_ptr<Vertex>> &vertices_landmark,
                          const std::vector<std::shared_ptr<Edge>> &edges);
+        bool marginalize(const std::shared_ptr<Vertex>& vertex_pose, 
+                         const std::shared_ptr<Vertex>& vertex_motion,
+                         const std::vector<std::shared_ptr<Vertex>> &marginalized_landmarks,
+                         const std::vector<std::shared_ptr<Edge>> &marginalized_edges,
+                         bool marg_oldest);
 
     public:
         static bool is_pose_vertex(const std::shared_ptr<Vertex>& v);   ///< 判断一个顶点是否为Pose顶点
