@@ -361,7 +361,7 @@ namespace graph_optimization {
                 ulong index_i = v_i->ordering_id();
                 ulong dim_i = v_i->local_dimension();
 
-                MatXX JtW = jacobian_i.transpose() * robust_information;
+                MatXX JtW = jacobian_i.transpose() * robust_information.selfadjointView<Eigen::Upper>();
                 for (size_t j = i; j < vertices.size(); ++j) {
                     auto &&v_j = vertices[j];
                     if (v_j->is_fixed()) continue;
@@ -372,22 +372,30 @@ namespace graph_optimization {
                     ulong index_j = v_j->ordering_id();
                     ulong dim_j = v_j->local_dimension();
 
-                    MatXX hessian = JtW * jacobian_j;
-
-//                    assert(hessian.rows() == v_i->local_dimension() && hessian.cols() == v_j->local_dimension());
-                    // 所有的信息矩阵叠加起来
-                    Hs[index].block(index_i, index_j, dim_i, dim_j).noalias() += hessian;
-                    if (j != i) {
-                        // 对称的下三角
-                        Hs[index].block(index_j, index_i, dim_j, dim_i).noalias() += hessian.transpose();
+                    if (index_i < index_j) {
+                        Hs[index].block(index_i, index_j, dim_i, dim_j).noalias() += JtW * jacobian_j;
+                    } else if (index_i > index_j) {
+                        Hs[index].block(index_j, index_i, dim_j, dim_i).noalias() += (JtW * jacobian_j).transpose();
+                    } else {
+                        Hs[index].block(index_i, index_i, dim_i, dim_i).triangularView<Eigen::Upper>() += JtW * jacobian_j;
                     }
+
+//                     MatXX hessian = JtW * jacobian_j;
+// //                    assert(hessian.rows() == v_i->local_dimension() && hessian.cols() == v_j->local_dimension());
+//                     // 所有的信息矩阵叠加起来
+//                     Hs[index].block(index_i, index_j, dim_i, dim_j).noalias() += hessian;
+//                     if (j != i) {
+//                         // 对称的下三角
+//                         Hs[index].block(index_j, index_i, dim_j, dim_i).noalias() += hessian.transpose();
+//                     }
                 }
                 bs[index].segment(index_i, dim_i).noalias() -= jacobian_i.transpose() * robust_residual;
             }
         }
 
         for (unsigned int i = 0; i < NUM_THREADS; ++i) {
-            h_state_landmark += Hs[i];
+            h_state_landmark.triangularView<Eigen::Upper>() += Hs[i];
+            // h_state_landmark += Hs[i];
             b_state_landmark += bs[i];
         }
 #else
@@ -442,14 +450,14 @@ namespace graph_optimization {
             }
         }
 #endif
-
+        h_state_landmark = h_state_landmark.selfadjointView<Eigen::Upper>();
 
         // marginalize与边连接的landmark
         MatXX h_state_schur;
         VecX b_state_schur;
         if (marginalized_landmarks_size > 0) {
             // Hll
-            VecX Hll = h_state_landmark.block(state_dim, state_dim, marginalized_landmarks_size, marginalized_landmarks_size).diagonal();
+            VecX Hll = h_state_landmark.diagonal().segment(state_dim, marginalized_landmarks_size);
             // 由于叠加了eps, 所以能够保证Hll可逆
             VecX Hll_inv = Hll.array().inverse();
 
@@ -458,7 +466,7 @@ namespace graph_optimization {
             // Hll^-1 * bl
 //            VecX temp_b = Hll_inv.cwiseProduct(b_state_landmark.tail(marginalized_landmark_size));
 
-            // (Hss - Hsl * Hll^-1 * Hlp) * dxp = bp - Hsl * Hll^-1 * bl
+            // (Hss - Hsl * Hll^-1 * Hls) * xs = bs - Hsl * Hll^-1 * bl
 #ifdef USE_OPENMP
             h_state_schur = MatXX::Zero(state_dim, state_dim);
 #pragma omp parallel for num_threads(NUM_THREADS) default(none) shared(h_state_landmark, h_state_schur, temp_H, state_dim, marginalized_landmarks_size)
@@ -471,22 +479,26 @@ namespace graph_optimization {
             }
             h_state_schur += h_state_landmark.block(0, 0, state_dim, state_dim);
 #else
-            h_state_schur = h_state_landmark.block(0, 0, state_dim, state_dim) - h_state_landmark.block(0, state_dim, state_dim, marginalized_landmark_size) * temp_H;
+            h_state_schur = h_state_landmark.block(0, 0, state_dim, state_dim) - h_state_landmark.block(0, state_dim, state_dim, marginalized_landmarks_size) * temp_H;
 #endif
+            // h_state_schur.triangularView<Eigen::Upper>() = h_state_landmark.block(0, 0, state_dim, state_dim) - h_state_landmark.block(0, state_dim, state_dim, marginalized_landmarks_size) * temp_H;
             b_state_schur = b_state_landmark.head(state_dim) - temp_H.transpose() * b_state_landmark.tail(marginalized_landmarks_size);
         } else {
             h_state_schur = h_state_landmark;
+            // h_state_schur.triangularView<Eigen::Upper>() = h_state_landmark;
             b_state_schur = b_state_landmark;
         }
 
         // 叠加之前的先验
         if(_h_prior.rows() > 0) {
             h_state_schur += _h_prior;
+            // h_state_schur.triangularView<Eigen::Upper>() += _h_prior;
             b_state_schur += _b_prior;
         } else {
             _h_prior = MatXX::Zero(state_dim, state_dim);
             _b_prior = VecX::Zero(state_dim, 1);
         }
+        // h_state_schur = h_state_schur.selfadjointView<Eigen::Upper>();
 
         // 边缘化
         ulong marg_index = vertex_pose->ordering_id();

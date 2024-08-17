@@ -144,7 +144,7 @@ namespace graph_optimization {
                 ulong index_i = v_i->ordering_id();
                 ulong dim_i = v_i->local_dimension();
 
-                MatXX JtW = jacobian_i.transpose() * robust_information;
+                MatXX JtW = jacobian_i.transpose() * robust_information.selfadjointView<Eigen::Upper>();
                 for (size_t j = i; j < verticies.size(); ++j) {
                     auto &&v_j = verticies[j];
                     if (v_j->is_fixed()) continue;
@@ -153,23 +153,31 @@ namespace graph_optimization {
                     ulong index_j = v_j->ordering_id();
                     ulong dim_j = v_j->local_dimension();
 
-//                    assert(v_j->ordering_id() != -1);
-                    MatXX hessian = JtW * jacobian_j;   // TODO: 这里能继续优化, 因为J'*W*J也是对称矩阵
-                    // 所有的信息矩阵叠加起来
-                    Hs[index].block(index_i, index_j, dim_i, dim_j).noalias() += hessian;
-                    if (j != i) {
-                        // 对称的下三角
-                        Hs[index].block(index_j, index_i, dim_j, dim_i).noalias() += hessian.transpose();
+                    if (index_i < index_j) {
+                        Hs[index].block(index_i, index_j, dim_i, dim_j).noalias() += JtW * jacobian_j;
+                    } else if (index_i > index_j) {
+                        Hs[index].block(index_j, index_i, dim_j, dim_i).noalias() += (JtW * jacobian_j).transpose();
+                    } else {
+                        Hs[index].block(index_i, index_i, dim_i, dim_i).triangularView<Eigen::Upper>() += JtW * jacobian_j;
                     }
+
+// //                    assert(v_j->ordering_id() != -1);
+//                     MatXX hessian = JtW * jacobian_j;   // TODO: 这里能继续优化, 因为J'*W*J也是对称矩阵
+//                     // 所有的信息矩阵叠加起来
+//                     Hs[index].block(index_i, index_j, dim_i, dim_j).noalias() += hessian;
+//                     if (j != i) {
+//                         // 对称的下三角
+//                         Hs[index].block(index_j, index_i, dim_j, dim_i).noalias() += hessian.transpose();
+//                     }
                 }
                 bs[index].segment(index_i, dim_i).noalias() -= jacobian_i.transpose() * robust_residual;
             }
         }
 
         for (unsigned int i = 0; i < NUM_THREADS; ++i) {
-            H += Hs[i];
+            // H += Hs[i];
+            H.triangularView<Eigen::Upper>() += Hs[i];
             b += bs[i];
-
             // _t_hessian_cost += t_cost[i];
         }
 #else
@@ -215,7 +223,8 @@ namespace graph_optimization {
 
         }
 #endif
-        _hessian = H;
+        // _hessian = H;
+        _hessian = H.selfadjointView<Eigen::Upper>();
         _b = b;
 
         // 叠加先验
@@ -255,18 +264,20 @@ namespace graph_optimization {
         double max_diagonal = 0.;
         ulong size = _hessian.cols();
         assert(_hessian.rows() == _hessian.cols() && "Hessian is not square");
-        for (ulong i = 0; i < size; ++i) {
-            max_diagonal = std::max(fabs(_hessian(i, i)), max_diagonal);
-        }
+        // for (ulong i = 0; i < size; ++i) {
+        //     max_diagonal = std::max(fabs(_hessian(i, i)), max_diagonal);
+        // }
+        max_diagonal = _hessian.diagonal().array().abs().maxCoeff();
 
         double tau = 1e-5;  // 1e-5
         _current_lambda = tau * max_diagonal;
         _current_lambda = std::min(std::max(_current_lambda, _lambda_min), _lambda_max);
 
-        _diag_lambda = tau * _hessian.diagonal();
-        for (int i = 0; i < _hessian.rows(); ++i) {
-            _diag_lambda(i) = std::min(std::max(_diag_lambda(i), _lambda_min), _lambda_max);
-        }
+        // _diag_lambda = tau * _hessian.diagonal();
+        // for (int i = 0; i < _hessian.rows(); ++i) {
+        //     _diag_lambda(i) = std::min(std::max(_diag_lambda(i), _lambda_min), _lambda_max);
+        // }
+        _diag_lambda = (tau * _hessian.diagonal()).array().cwiseMax(_lambda_min).cwiseMin(_lambda_max);
     }
 
     double Problem::calculate_hessian_norm_square(const VecX &x) {
@@ -379,7 +390,7 @@ namespace graph_optimization {
     void Problem::update_prior(const VecX &delta_x) {
         if (_b_prior.rows() > 0) {
             _b_prior_bp = _b_prior;
-            _b_prior -= _h_prior * delta_x;
+            _b_prior -= _h_prior.selfadjointView<Eigen::Upper>() * delta_x;
         }
     }
 
