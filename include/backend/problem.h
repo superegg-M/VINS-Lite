@@ -67,7 +67,7 @@ namespace graph_optimization {
         void update_residual(); ///< 计算每条边的残差;      运行顺序必须遵循: update_state -> update_residual
         void update_jacobian(); ///< 计算每条边的残差;      运行顺序必须遵循: update_residual -> update_jacobian
         void update_chi2(); ///< 计算综合的chi2;           运行顺序必须遵循: update_residual -> update_chi2
-        void update_hessian();    ///< 计算H, b, J, f;    运行顺序必须遵循: update_jacobian -> update_hessian
+        virtual void update_hessian();    ///< 计算H, b, J, f;    运行顺序必须遵循: update_jacobian -> update_hessian
         virtual void add_prior_to_hessian();    ///< H = H + H_prior;   在make_hessian()时会运行
         void initialize_lambda();   ///< 计算λ;   运行顺序必须遵循: update_hessian -> initialize_lambda
         virtual VecX multiply_hessian(const VecX &x); ///< 计算: Hx

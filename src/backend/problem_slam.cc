@@ -1042,4 +1042,202 @@ namespace graph_optimization {
 
         return true;
     }
+
+    bool ProblemSLAM::add_reproj_edge(const std::shared_ptr<Edge> &edge) {
+        if (Problem::add_edge(edge)) {
+            _reproj_edges.emplace_back(edge);
+            return true;
+        }
+        return false;
+    }
+
+    bool ProblemSLAM::add_imu_edge(const std::shared_ptr<Edge> &edge) {
+        if (Problem::add_edge(edge)) {
+            _imu_edges.emplace_back(edge);
+            return true;
+        }
+        return false;
+    }
+
+    void ProblemSLAM::update_hessian() {
+        TicToc t_h;
+
+        ulong size = _ordering_generic;
+        MatXX H(MatXX::Zero(size, size));       ///< Hessian矩阵
+        VecX b(VecX::Zero(size));       ///< 负梯度
+
+#ifdef USE_OPENMP
+        MatXX Hs[NUM_THREADS];       ///< Hessian矩阵
+        VecX bs[NUM_THREADS];       ///< 负梯度
+        for (unsigned int i = 0; i < NUM_THREADS; ++i) {
+            Hs[i] = MatXX::Zero(size, size);
+            bs[i] = VecX::Zero(size);
+        }
+
+        // 遍历每个残差，并计算他们的雅克比，得到最后的 H = J^T * J
+//        omp_set_num_threads(NUM_THREADS);
+#pragma omp parallel for num_threads(NUM_THREADS) default(none) shared(Hs, bs)
+        for (size_t n = 0; n < _reproj_edges.size(); ++n) {
+            unsigned int index = omp_get_thread_num();
+
+            auto &&edge = _reproj_edges[n];
+            auto &&jacobians = edge->jacobians();
+            auto &&verticies = edge->vertices();
+            assert(jacobians.size() == verticies.size());
+
+            // 计算edge的鲁棒权重
+            double drho;
+            MatXX robust_information;
+            VecX robust_residual;
+            edge->robust_information(drho, robust_information, robust_residual);
+            for (size_t i = 0; i < verticies.size(); ++i) {
+                auto &&v_i = verticies[i];
+                if (v_i->is_fixed()) continue;    // Hessian 里不需要添加它的信息，也就是它的雅克比为 0
+
+                auto &&jacobian_i = jacobians[i];
+                ulong index_i = v_i->ordering_id();
+                ulong dim_i = v_i->local_dimension();
+
+                MatXX JtW = jacobian_i.transpose() * robust_information.selfadjointView<Eigen::Upper>();
+                for (size_t j = i; j < verticies.size(); ++j) {
+                    auto &&v_j = verticies[j];
+                    if (v_j->is_fixed()) continue;
+
+                    auto &&jacobian_j = jacobians[j];
+                    ulong index_j = v_j->ordering_id();
+                    ulong dim_j = v_j->local_dimension();
+
+                    if (index_i < index_j) {
+                        Hs[index].block(index_i, index_j, dim_i, dim_j).noalias() += JtW * jacobian_j;
+                    } else if (index_i > index_j) {
+                        Hs[index].block(index_j, index_i, dim_j, dim_i).noalias() += (JtW * jacobian_j).transpose();
+                    } else {
+                        Hs[index].block(index_i, index_i, dim_i, dim_i).triangularView<Eigen::Upper>() += JtW * jacobian_j;
+                    }
+
+// //                    assert(v_j->ordering_id() != -1);
+//                     MatXX hessian = JtW * jacobian_j;   // TODO: 这里能继续优化, 因为J'*W*J也是对称矩阵
+//                     // 所有的信息矩阵叠加起来
+//                     Hs[index].block(index_i, index_j, dim_i, dim_j).noalias() += hessian;
+//                     if (j != i) {
+//                         // 对称的下三角
+//                         Hs[index].block(index_j, index_i, dim_j, dim_i).noalias() += hessian.transpose();
+//                     }
+                }
+                bs[index].segment(index_i, dim_i).noalias() -= jacobian_i.transpose() * robust_residual;
+            }
+        }
+
+#pragma omp parallel for num_threads(NUM_THREADS) default(none) shared(Hs, bs)
+        for (size_t n = 0; n < _imu_edges.size(); ++n) {
+            unsigned int index = omp_get_thread_num();
+
+            auto &&edge = _imu_edges[n];
+            auto &&jacobians = edge->jacobians();
+            auto &&verticies = edge->vertices();
+            assert(jacobians.size() == verticies.size());
+
+            // 计算edge的鲁棒权重
+            double drho;
+            MatXX robust_information;
+            VecX robust_residual;
+            edge->robust_information(drho, robust_information, robust_residual);
+            for (size_t i = 0; i < verticies.size(); ++i) {
+                auto &&v_i = verticies[i];
+                if (v_i->is_fixed()) continue;    // Hessian 里不需要添加它的信息，也就是它的雅克比为 0
+
+                auto &&jacobian_i = jacobians[i];
+                ulong index_i = v_i->ordering_id();
+                ulong dim_i = v_i->local_dimension();
+
+                MatXX JtW = jacobian_i.transpose() * robust_information.selfadjointView<Eigen::Upper>();
+                for (size_t j = i; j < verticies.size(); ++j) {
+                    auto &&v_j = verticies[j];
+                    if (v_j->is_fixed()) continue;
+
+                    auto &&jacobian_j = jacobians[j];
+                    ulong index_j = v_j->ordering_id();
+                    ulong dim_j = v_j->local_dimension();
+
+                    if (index_i < index_j) {
+                        Hs[index].block(index_i, index_j, dim_i, dim_j).noalias() += JtW * jacobian_j;
+                    } else if (index_i > index_j) {
+                        Hs[index].block(index_j, index_i, dim_j, dim_i).noalias() += (JtW * jacobian_j).transpose();
+                    } else {
+                        Hs[index].block(index_i, index_i, dim_i, dim_i).triangularView<Eigen::Upper>() += JtW * jacobian_j;
+                    }
+
+// //                    assert(v_j->ordering_id() != -1);
+//                     MatXX hessian = JtW * jacobian_j;   // TODO: 这里能继续优化, 因为J'*W*J也是对称矩阵
+//                     // 所有的信息矩阵叠加起来
+//                     Hs[index].block(index_i, index_j, dim_i, dim_j).noalias() += hessian;
+//                     if (j != i) {
+//                         // 对称的下三角
+//                         Hs[index].block(index_j, index_i, dim_j, dim_i).noalias() += hessian.transpose();
+//                     }
+                }
+                bs[index].segment(index_i, dim_i).noalias() -= jacobian_i.transpose() * robust_residual;
+            }
+        }
+
+        for (unsigned int i = 0; i < NUM_THREADS; ++i) {
+            // H += Hs[i];
+            H.triangularView<Eigen::Upper>() += Hs[i];
+            b += bs[i];
+            // _t_hessian_cost += t_cost[i];
+        }
+#else
+        // 遍历每个残差，并计算他们的雅克比，得到最后的 H = J^T * J
+        for (auto &edge: edges) {
+            auto &&jacobians = edge->jacobians();
+            auto &&verticies = edge->vertices();
+            assert(jacobians.size() == verticies.size());
+
+            // 计算edge的鲁棒权重
+            double drho;
+            MatXX robust_information;
+            VecX robust_residual;
+            edge.second->robust_information(drho, robust_information, robust_residual);
+            for (size_t i = 0; i < verticies.size(); ++i) {
+                auto &&v_i = verticies[i];
+                if (v_i->is_fixed()) continue;    // Hessian 里不需要添加它的信息，也就是它的雅克比为 0
+
+                auto &&jacobian_i = jacobians[i];
+                ulong index_i = v_i->ordering_id();
+                ulong dim_i = v_i->local_dimension();
+
+                MatXX JtW = jacobian_i.transpose() * robust_information;
+                for (size_t j = i; j < verticies.size(); ++j) {
+                    auto &&v_j = verticies[j];
+                    if (v_j->is_fixed()) continue;
+
+                    auto &&jacobian_j = jacobians[j];
+                    ulong index_j = v_j->ordering_id();
+                    ulong dim_j = v_j->local_dimension();
+
+                    assert(v_j->ordering_id() != -1);
+                    MatXX hessian = JtW * jacobian_j;   // TODO: 这里能继续优化, 因为J'*W*J也是对称矩阵
+                    // 所有的信息矩阵叠加起来
+                    H.block(index_i, index_j, dim_i, dim_j).noalias() += hessian;
+                    if (j != i) {
+                        // 对称的下三角
+                        H.block(index_j, index_i, dim_j, dim_i).noalias() += hessian.transpose();
+                    }
+                }
+                b.segment(index_i, dim_i).noalias() -= jacobian_i.transpose() * robust_residual;
+            }
+
+        }
+#endif
+        // _hessian = H;
+        _hessian = H.selfadjointView<Eigen::Upper>();
+        _b = b;
+
+        // 叠加先验
+        add_prior_to_hessian();
+
+//        _delta_x = VecX::Zero(size);  // initial delta_x = 0_n;
+
+        _t_hessian_cost += t_h.toc();
+    }
 }

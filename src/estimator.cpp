@@ -794,7 +794,8 @@ void Estimator::problemSolve() {
         edge_vertex.push_back(vertexCams_vec[j]);
         edge_vertex.push_back(vertexVB_vec[j]);
         imu_edge->set_vertices(edge_vertex);
-        problem.add_edge(imu_edge);
+        // problem.add_edge(imu_edge);
+        problem.add_imu_edge(imu_edge);
 
         if (i == imu_marg || j == imu_marg) {
             _marg_edges.emplace_back(imu_edge);
@@ -877,7 +878,8 @@ void Estimator::problemSolve() {
         }
         for (auto &edges : edge_vec) {
             for (auto &edge : edges) {
-                problem.add_edge(edge);
+                // problem.add_edge(edge);
+                problem.add_reproj_edge(edge);
             }
         }
         for (auto &landmarks : marg_landmarks_vec) {
@@ -920,7 +922,7 @@ void Estimator::problemSolve() {
                     edge->set_information(information);
 
                     // edge->set_loss_function(lossfunction);
-                    problem.add_edge(edge);
+                    problem.add_reproj_edge(edge);
 
                     if (imu_j == imu_marg) {
                         marg_edges.emplace_back(edge);

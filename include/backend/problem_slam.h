@@ -14,6 +14,8 @@ namespace graph_optimization {
 
         bool add_state_vertex(const std::shared_ptr<Vertex>& vertex);
         bool add_landmark_vertex(const std::shared_ptr<Vertex>& vertex);
+        bool add_reproj_edge(const std::shared_ptr<Edge> &edge);
+        bool add_imu_edge(const std::shared_ptr<Edge> &edge);
 
         bool marginalize(const std::shared_ptr<Vertex>& vertex_pose, const std::shared_ptr<Vertex>& vertex_motion); ///< 边缘化pose和与之相关的edge
         bool marginalize(const std::shared_ptr<Vertex>& vertex_pose, 
@@ -37,12 +39,15 @@ namespace graph_optimization {
         VecX multiply_hessian(const VecX &x) override;
         bool solve_linear_system(VecX &delta_x) override;
         void update_prior(const VecX &delta_x) override;
+        void update_hessian() override;
 
     public:
         ulong _ordering_poses = 0;
         ulong _ordering_landmarks = 0;
         std::vector<std::shared_ptr<Vertex>> _pose_vertices;
         std::vector<std::shared_ptr<Vertex>> _landmark_vertices;
+        std::vector<std::shared_ptr<Edge>> _reproj_edges;
+        std::vector<std::shared_ptr<Edge>> _imu_edges;
 
         // 使用schur补求解线性方程组时的过程量
         MatXX _h_pp_schur;
