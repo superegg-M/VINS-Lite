@@ -58,10 +58,12 @@ namespace graph_optimization {
             assert(jacobians.size() == vertices.size());
 
             // 计算edge的鲁棒权重
-            double drho;
-            MatXX robust_information;
-            VecX robust_residual;
-            edge->robust_information(drho, robust_information, robust_residual);
+            // double drho;
+            // MatXX robust_information;
+            // VecX robust_residual;
+            // edge->robust_information(drho, robust_information, robust_residual);
+            auto &&robust_information = edge->get_robust_info();
+            auto &&robust_residual = edge->get_robust_res();
 
             for (size_t i = 0; i < vertices.size(); ++i) {
                 auto &&v_i = vertices[i];
@@ -296,10 +298,12 @@ namespace graph_optimization {
             assert(jacobians.size() == vertices.size());
 
             // 计算edge的鲁棒权重
-            double drho;
-            MatXX robust_information;
-            VecX robust_residual;
-            edge->robust_information(drho, robust_information, robust_residual);
+            // double drho;
+            // MatXX robust_information;
+            // VecX robust_residual;
+            // edge->robust_information(drho, robust_information, robust_residual);
+            auto &&robust_information = edge->get_robust_info();
+            auto &&robust_residual = edge->get_robust_res();
 
             for (size_t i = 0; i < vertices.size(); ++i) {
                 auto &&v_i = vertices[i];
@@ -352,10 +356,12 @@ namespace graph_optimization {
             assert(jacobians.size() == vertices.size());
 
             // 计算edge的鲁棒权重
-            double drho;
-            MatXX robust_information;
-            VecX robust_residual;
-            edge->robust_information(drho, robust_information, robust_residual);
+            // double drho;
+            // MatXX robust_information;
+            // VecX robust_residual;
+            // edge->robust_information(drho, robust_information, robust_residual);
+            auto &&robust_information = edge->get_robust_info();
+            auto &&robust_residual = edge->get_robust_res();
 
             for (size_t i = 0; i < vertices.size(); ++i) {
                 auto &&v_i = vertices[i];
@@ -806,10 +812,13 @@ namespace graph_optimization {
             assert(jacobians.size() == verticies.size());
 
             // 计算edge的鲁棒权重
-            double drho;
-            MatXX robust_information;
-            VecX robust_residual;
-            edge->robust_information(drho, robust_information, robust_residual);
+            // double drho;
+            // MatXX robust_information;
+            // VecX robust_residual;
+            // edge->robust_information(drho, robust_information, robust_residual);
+            edge->compute_robust();
+            auto &&robust_information = edge->get_robust_info();
+            auto &&robust_residual = edge->get_robust_res();
             for (size_t i = 0; i < verticies.size(); ++i) {
                 auto &&v_i = verticies[i];
                 if (v_i->is_fixed()) continue;    // Hessian 里不需要添加它的信息，也就是它的雅克比为 0
@@ -858,10 +867,13 @@ namespace graph_optimization {
             assert(jacobians.size() == verticies.size());
 
             // 计算edge的鲁棒权重
-            double drho;
-            MatXX robust_information;
-            VecX robust_residual;
-            edge->robust_information(drho, robust_information, robust_residual);
+            // double drho;
+            // MatXX robust_information;
+            // VecX robust_residual;
+            // edge->robust_information(drho, robust_information, robust_residual);
+            edge->compute_robust();
+            auto &&robust_information = edge->get_robust_info();
+            auto &&robust_residual = edge->get_robust_res();
             for (size_t i = 0; i < verticies.size(); ++i) {
                 auto &&v_i = verticies[i];
                 if (v_i->is_fixed()) continue;    // Hessian 里不需要添加它的信息，也就是它的雅克比为 0

@@ -39,8 +39,32 @@ namespace graph_optimization {
     }
 
     void Edge::compute_chi2() {
-        _chi2 = _residual.transpose() * _information.selfadjointView<Eigen::Upper>() * _residual;
+        if (_use_info) {
+            _chi2 = _residual.transpose() * _information.selfadjointView<Eigen::Upper>() * _residual;
+        } else {
+            _chi2 = _residual.squaredNorm();
+        }
         _rho = _loss_function->compute(_chi2);
+    }
+
+    void Edge::compute_robust() {
+        if (_use_info) {
+            _robust_res = _information.selfadjointView<Eigen::Upper>() * _residual;
+            _robust_info.resize(_information.rows(), _information.cols());
+            _robust_info.triangularView<Eigen::Upper>() = _rho[1] * _information;
+            if(_rho[1] + 2. * _rho[2] * _chi2 > 0.) {
+                _robust_info.triangularView<Eigen::Upper>() += ((2. * _rho[2]) * _robust_res) * _robust_res.transpose();
+            }
+            _robust_res *= _rho[1];
+        } else {
+            _robust_res = _residual;
+            _robust_info = VecX::Constant(_information.rows(), 1, _rho[1]).asDiagonal();
+            if(_rho[1] + 2. * _rho[2] * _chi2 > 0.) {
+                _robust_info.triangularView<Eigen::Upper>() += ((2. * _rho[2]) * _robust_res) * _robust_res.transpose();
+            }
+            _robust_res *= _rho[1];
+        }
+        _robust_info = _robust_info.selfadjointView<Eigen::Upper>();
     }
 
     void Edge::robust_information(double &drho, MatXX &info, VecX &res) const {
