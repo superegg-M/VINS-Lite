@@ -81,7 +81,7 @@ namespace graph_optimization {
 
                 new_chi2 = get_chi2();
                 double nonlinear_gain = current_chi2 - new_chi2;
-                double linear_gain = 0.5 * delta_x.transpose() * (VecX(_diag_lambda.array() * delta_x.array()) + _b);
+                double linear_gain = 0.5 * delta_x.dot(_diag_lambda.cwiseProduct(delta_x) + _b);
                 if (fabs(linear_gain) < eps) {
                     linear_gain = eps;
                 }
