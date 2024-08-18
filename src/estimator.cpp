@@ -149,9 +149,9 @@ void Estimator::processImage(const map<int, vector<pair<int, Eigen::Matrix<doubl
     imageframe.pre_integration = tmp_pre_integration;
     all_image_frame.insert(make_pair(header, imageframe));
 
-#ifdef PRINT_INFO    
-    std::cout << "numbers of all_image_frame: " << all_image_frame.size() << std::endl;
-#endif
+// #ifdef PRINT_INFO    
+//     std::cout << "numbers of all_image_frame: " << all_image_frame.size() << std::endl;
+// #endif
 
 #ifdef CAIN_IMU_INTEGRATION
     tmp_pre_integration = new vins::IMUIntegration{acc_0, gyr_0, Bas[frame_count], Bgs[frame_count]};
@@ -671,7 +671,8 @@ void Estimator::MargNewFrame() {
 void Estimator::problemSolve() {
     TicToc t_new_problem;
 
-    _problem = graph_optimization::ProblemSLAM();
+    // _problem = graph_optimization::ProblemSLAM();
+    _problem.clear();
     _vertex_pose_vec.clear();
     _vertex_motion_vec.clear();
     _state_dim = 0;
@@ -970,15 +971,15 @@ void Estimator::problemSolve() {
     // update bprior_,  Hprior_ do not need update
     if (Hprior_.rows() > 0) {
         bprior_ = problem.get_b_prior();
-#ifdef PRINT_INFO        
-        std::cout << "----------- update bprior -------------\n";
-        std::cout << "             before: " << bprior_.norm() << std::endl;
-        std::cout << "                     " << errprior_.norm() << std::endl;
+// #ifdef PRINT_INFO        
+//         std::cout << "----------- update bprior -------------\n";
+//         std::cout << "             before: " << bprior_.norm() << std::endl;
+//         std::cout << "                     " << errprior_.norm() << std::endl;
         
-        // errprior_ = problem.get_err_prior();
-        std::cout << "             after: " << bprior_.norm() << std::endl;
-        std::cout << "                    " << errprior_.norm() << std::endl;
-#endif        
+//         // errprior_ = problem.get_err_prior();
+//         std::cout << "             after: " << bprior_.norm() << std::endl;
+//         std::cout << "                    " << errprior_.norm() << std::endl;
+// #endif        
     }
 
     // update parameter

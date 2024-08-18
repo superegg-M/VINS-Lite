@@ -548,4 +548,19 @@ namespace graph_optimization {
         //           "1 problem::LogoutVectorSize verticies_:" << verticies_.size() <<
         //           " edges:" << edges_.size();
     }
+
+    void Problem::clear() {
+        _t_residual_cost = 0.;
+        _t_chi2_cost = 0.;
+        _t_jacobian_cost = 0.;
+        _t_hessian_cost = 0.;
+        _t_PCG_solve_cost = 0.;
+        
+        _ordering_generic = 0;
+        _chi2 = 0.;
+
+        _vertices.clear();
+        _edges.clear();
+        _vertex_to_edge.clear();
+    }
 }

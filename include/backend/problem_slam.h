@@ -11,6 +11,7 @@ namespace graph_optimization {
     class ProblemSLAM : public Problem {
     public:
         ProblemSLAM() = default;
+        void clear() override;
 
         bool add_state_vertex(const std::shared_ptr<Vertex>& vertex);
         bool add_landmark_vertex(const std::shared_ptr<Vertex>& vertex);

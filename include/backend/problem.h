@@ -41,6 +41,7 @@ namespace graph_optimization {
         bool remove_edge(const std::shared_ptr<Edge>& edge);
         void extend_prior_hessian_size(ulong dim);
         bool solve(unsigned long iterations);
+        virtual void clear();
 
     public:
         std::vector<std::shared_ptr<Edge>> get_connected_edges(const std::shared_ptr<Vertex>& vertex);  ///< 获取某个顶点连接到的边

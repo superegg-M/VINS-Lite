@@ -1044,19 +1044,27 @@ namespace graph_optimization {
     }
 
     bool ProblemSLAM::add_reproj_edge(const std::shared_ptr<Edge> &edge) {
-        if (Problem::add_edge(edge)) {
-            _reproj_edges.emplace_back(edge);
-            return true;
-        }
-        return false;
+        _edges.emplace_back(edge);
+        _reproj_edges.emplace_back(edge);
+        return true;
+        
+        // if (Problem::add_edge(edge)) {
+        //     _reproj_edges.emplace_back(edge);
+        //     return true;
+        // }
+        // return false;
     }
 
     bool ProblemSLAM::add_imu_edge(const std::shared_ptr<Edge> &edge) {
-        if (Problem::add_edge(edge)) {
-            _imu_edges.emplace_back(edge);
-            return true;
-        }
-        return false;
+        _edges.emplace_back(edge);
+        _imu_edges.emplace_back(edge);
+        return true;
+
+        // if (Problem::add_edge(edge)) {
+        //     _imu_edges.emplace_back(edge);
+        //     return true;
+        // }
+        // return false;
     }
 
     void ProblemSLAM::update_hessian() {
@@ -1239,5 +1247,15 @@ namespace graph_optimization {
 //        _delta_x = VecX::Zero(size);  // initial delta_x = 0_n;
 
         _t_hessian_cost += t_h.toc();
+    }
+
+    void ProblemSLAM::clear() {
+        Problem::clear();
+        _pose_vertices.clear();
+        _landmark_vertices.clear();
+        _reproj_edges.clear();
+        _imu_edges.clear();
+        _ordering_poses = 0;
+        _ordering_landmarks = 0;
     }
 }
