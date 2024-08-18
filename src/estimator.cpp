@@ -870,15 +870,15 @@ void Estimator::problemSolve() {
                     problem.add_reproj_edge(edge);
 
                     if (imu_j == imu_marg) {
-                        marg_edges.emplace_back(edge);
-                        _marg_landmarks.emplace_back(it_per_id.second->vertex_landmark);
+                        _marg_edges.emplace_back(edge);
+                        _marg_landmarks.emplace_back(it_per_id.second.vertex_landmark);
                     }
                     if (imu_i == imu_marg) {
                         _marg_edges.emplace_back(edge);
                     }
                 }
                 if (imu_i == imu_marg) {
-                    _marg_landmarks.emplace_back(it_per_id.second->vertex_landmark);
+                    _marg_landmarks.emplace_back(it_per_id.second.vertex_landmark);
                 }
             }
         }
