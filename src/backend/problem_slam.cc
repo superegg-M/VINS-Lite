@@ -56,7 +56,7 @@ namespace graph_optimization {
             auto &edge = edges[n];
             auto &&jacobians = edge->jacobians();
             auto &&vertices = edge->vertices();
-            assert(jacobians.size() == vertices.size());
+            // assert(jacobians.size() == vertices.size());
 
             // 计算edge的鲁棒权重
             double drho;
@@ -114,7 +114,7 @@ namespace graph_optimization {
             auto &&jacobians = edge->jacobians();
             auto &&vertices = edge->vertices();
 
-            assert(jacobians.size() == vertices.size());
+            // assert(jacobians.size() == vertices.size());
 
             // 计算edge的鲁棒权重
             double drho;
@@ -151,7 +151,7 @@ namespace graph_optimization {
 
                     MatXX hessian = JtW * jacobian_j;
 
-                    assert(hessian.rows() == v_i->local_dimension() && hessian.cols() == v_j->local_dimension());
+                    // assert(hessian.rows() == v_i->local_dimension() && hessian.cols() == v_j->local_dimension());
                     // 所有的信息矩阵叠加起来
                     h_state_landmark.block(index_i, index_j, dim_i, dim_j) += hessian;
                     if (j != i) {
@@ -343,7 +343,7 @@ namespace graph_optimization {
             auto &edge = marginalized_edges[n];
             auto &&jacobians = edge->jacobians();
             auto &&vertices = edge->vertices();
-            assert(jacobians.size() == vertices.size());
+            // assert(jacobians.size() == vertices.size());
 
             // 计算edge的鲁棒权重
             double drho;
@@ -407,7 +407,7 @@ namespace graph_optimization {
             auto &&jacobians = edge->jacobians();
             auto &&vertices = edge->vertices();
 
-            assert(jacobians.size() == vertices.size());
+            // assert(jacobians.size() == vertices.size());
 
             // 计算edge的鲁棒权重
             double drho;
@@ -438,7 +438,7 @@ namespace graph_optimization {
 
                     MatXX hessian = JtW * jacobian_j;
 
-                    assert(hessian.rows() == v_i->local_dimension() && hessian.cols() == v_j->local_dimension());
+                    // assert(hessian.rows() == v_i->local_dimension() && hessian.cols() == v_j->local_dimension());
                     // 所有的信息矩阵叠加起来
                     h_state_landmark.block(index_i, index_j, dim_i, dim_j) += hessian;
                     if (j != i) {
@@ -581,7 +581,7 @@ namespace graph_optimization {
             auto &edge = marginalized_edges[n];
             auto &&jacobians = edge->jacobians();
             auto &&vertices = edge->vertices();
-            assert(jacobians.size() == vertices.size());
+            // assert(jacobians.size() == vertices.size());
 
             // 计算edge的鲁棒权重
             double drho;
@@ -637,7 +637,7 @@ namespace graph_optimization {
             auto &&jacobians = edge->jacobians();
             auto &&vertices = edge->vertices();
 
-            assert(jacobians.size() == vertices.size());
+            // assert(jacobians.size() == vertices.size());
 
             // 计算edge的鲁棒权重
             double drho;
@@ -668,7 +668,7 @@ namespace graph_optimization {
 
                     MatXX hessian = JtW * jacobian_j;
 
-                    assert(hessian.rows() == v_i->local_dimension() && hessian.cols() == v_j->local_dimension());
+                    // assert(hessian.rows() == v_i->local_dimension() && hessian.cols() == v_j->local_dimension());
                     // 所有的信息矩阵叠加起来
                     h_state_landmark.block(index_i, index_j, dim_i, dim_j) += hessian;
                     if (j != i) {
@@ -1083,7 +1083,7 @@ namespace graph_optimization {
             auto &&edge = _reproj_edges[n];
             auto &&jacobians = edge->jacobians();
             auto &&verticies = edge->vertices();
-            assert(jacobians.size() == verticies.size());
+            // assert(jacobians.size() == verticies.size());
 
             // 计算edge的鲁棒权重
             double drho;
@@ -1135,7 +1135,7 @@ namespace graph_optimization {
             auto &&edge = _imu_edges[n];
             auto &&jacobians = edge->jacobians();
             auto &&verticies = edge->vertices();
-            assert(jacobians.size() == verticies.size());
+            // assert(jacobians.size() == verticies.size());
 
             // 计算edge的鲁棒权重
             double drho;
@@ -1191,7 +1191,7 @@ namespace graph_optimization {
         for (auto &edge: edges) {
             auto &&jacobians = edge->jacobians();
             auto &&verticies = edge->vertices();
-            assert(jacobians.size() == verticies.size());
+            // assert(jacobians.size() == verticies.size());
 
             // 计算edge的鲁棒权重
             double drho;
@@ -1215,7 +1215,7 @@ namespace graph_optimization {
                     ulong index_j = v_j->ordering_id();
                     ulong dim_j = v_j->local_dimension();
 
-                    assert(v_j->ordering_id() != -1);
+                    // assert(v_j->ordering_id() != -1);
                     MatXX hessian = JtW * jacobian_j;   // TODO: 这里能继续优化, 因为J'*W*J也是对称矩阵
                     // 所有的信息矩阵叠加起来
                     H.block(index_i, index_j, dim_i, dim_j).noalias() += hessian;

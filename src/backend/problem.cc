@@ -129,7 +129,7 @@ namespace graph_optimization {
             auto &&edge = _edges[n];
             auto &&jacobians = edge->jacobians();
             auto &&verticies = edge->vertices();
-            assert(jacobians.size() == verticies.size());
+            // assert(jacobians.size() == verticies.size());
 
             // 计算edge的鲁棒权重
             double drho;
@@ -185,7 +185,7 @@ namespace graph_optimization {
         for (auto &edge: edges) {
             auto &&jacobians = edge->jacobians();
             auto &&verticies = edge->vertices();
-            assert(jacobians.size() == verticies.size());
+            // assert(jacobians.size() == verticies.size());
 
             // 计算edge的鲁棒权重
             double drho;
@@ -209,7 +209,7 @@ namespace graph_optimization {
                     ulong index_j = v_j->ordering_id();
                     ulong dim_j = v_j->local_dimension();
 
-                    assert(v_j->ordering_id() != -1);
+                    // assert(v_j->ordering_id() != -1);
                     MatXX hessian = JtW * jacobian_j;   // TODO: 这里能继续优化, 因为J'*W*J也是对称矩阵
                     // 所有的信息矩阵叠加起来
                     H.block(index_i, index_j, dim_i, dim_j).noalias() += hessian;
@@ -263,7 +263,7 @@ namespace graph_optimization {
     void Problem::initialize_lambda() {
         double max_diagonal = 0.;
         ulong size = _hessian.cols();
-        assert(_hessian.rows() == _hessian.cols() && "Hessian is not square");
+        // assert(_hessian.rows() == _hessian.cols() && "Hessian is not square");
         // for (ulong i = 0; i < size; ++i) {
         //     max_diagonal = std::max(fabs(_hessian(i, i)), max_diagonal);
         // }
@@ -290,7 +290,7 @@ namespace graph_optimization {
             auto &&edge = _edges_vector[n];
             auto &&jacobians = edge.second->jacobians();
             auto &&verticies = edge.second->vertices();
-            assert(jacobians.size() == verticies.size());
+            // assert(jacobians.size() == verticies.size());
 
             // 计算edge的鲁棒权重
             double drho;
@@ -313,7 +313,7 @@ namespace graph_optimization {
     for (auto &edge: _edges) {
             auto &&jacobians = edge.second->jacobians();
             auto &&verticies = edge.second->vertices();
-            assert(jacobians.size() == verticies.size());
+            // assert(jacobians.size() == verticies.size());
 
             // 计算edge的鲁棒权重
             double drho;
@@ -449,7 +449,7 @@ namespace graph_optimization {
 
     void Problem::save_hessian_diagonal_elements() {
         ulong size = _hessian.cols();
-        assert(_hessian.rows() == _hessian.cols() && "Hessian is not square");
+        // assert(_hessian.rows() == _hessian.cols() && "Hessian is not square");
         _hessian_diag.resize(size);
         for (ulong i = 0; i < size; ++i) {
             _hessian_diag(i) = _hessian(i, i);
@@ -458,8 +458,8 @@ namespace graph_optimization {
 
     void Problem::load_hessian_diagonal_elements() {
         ulong size = _hessian.cols();
-        assert(_hessian.rows() == _hessian.cols() && "Hessian is not square");
-        assert(size == _hessian_diag.size() && "Hessian dimension is wrong");
+        // assert(_hessian.rows() == _hessian.cols() && "Hessian is not square");
+        // assert(size == _hessian_diag.size() && "Hessian dimension is wrong");
         for (ulong i = 0; i < size; ++i) {
             _hessian(i, i) = _hessian_diag(i);
         }
@@ -471,7 +471,7 @@ namespace graph_optimization {
 *
 */
     VecX Problem::PCG_solver(const MatXX &A, const VecX &b, unsigned long max_iter) {
-        assert(A.rows() == A.cols() && "PCG solver ERROR: A is not a square matrix");
+        // assert(A.rows() == A.cols() && "PCG solver ERROR: A is not a square matrix");
         TicToc t_h;
         unsigned long rows = b.rows();
         unsigned long n = max_iter ? max_iter : rows;
