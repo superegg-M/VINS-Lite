@@ -79,6 +79,8 @@ namespace graph_optimization {
         /// 计算雅可比，由子类实现
         virtual void compute_jacobians() = 0;
 
+        void compute_robust();
+
         void compute_chi2();
 
         /// 计算平方误差，会乘以信息矩阵
@@ -97,6 +99,12 @@ namespace graph_optimization {
 
         /// 返回信息矩阵
         const MatXX &information() const { return _information; }
+
+        /// 鲁棒信息矩阵
+        const MatXX &get_robust_info() const { return _robust_info; }   
+
+        /// 鲁棒残差
+        const VecX &get_robust_res() const { return _robust_res; }               
 
         void robust_information(double &drho, MatXX &info, VecX &res) const;
 
@@ -126,6 +134,8 @@ namespace graph_optimization {
         double _chi2 {0};               ///< e^2
         Vec3 _rho;                      ///< rho(e^2), rho'(e^2), rho''(e^2)
         MatXX _information;             ///< 信息矩阵
+        MatXX _robust_info;             ///< 鲁棒信息矩阵
+        VecX _robust_res;               ///< 鲁棒残差
         VecX _observation;              ///< 观测信息
         std::shared_ptr<LossFunction> _loss_function;
 

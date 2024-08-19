@@ -508,11 +508,13 @@ double FeatureManager::compensated_parallax2(const FeaturePerId &it_per_id, unsi
 #ifdef USE_OPENMP
 void FeatureManager::update_features_vector() {
     features_vector.clear();
+    suitable_features.clear();
     activate_features_num = 0;
     for (auto &feature : features_map) {
         features_vector.emplace_back(feature.first, &feature.second);
         if (feature.second.is_suitable_to_reprojection()) {
             ++activate_features_num;
+            suitable_features.emplace_back(&feature.second);
         }
     }
 }

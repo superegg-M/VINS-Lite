@@ -132,10 +132,13 @@ namespace graph_optimization {
             // assert(jacobians.size() == verticies.size());
 
             // 计算edge的鲁棒权重
-            double drho;
-            MatXX robust_information;
-            VecX robust_residual;
-            edge->robust_information(drho, robust_information, robust_residual);
+            // double drho;
+            // MatXX robust_information;
+            // VecX robust_residual;
+            // edge->robust_information(drho, robust_information, robust_residual);
+            edge->compute_robust();
+            auto &&robust_information = edge->get_robust_info();
+            auto &&robust_residual = edge->get_robust_res();
             for (size_t i = 0; i < verticies.size(); ++i) {
                 auto &&v_i = verticies[i];
                 if (v_i->is_fixed()) continue;    // Hessian 里不需要添加它的信息，也就是它的雅克比为 0
@@ -188,10 +191,13 @@ namespace graph_optimization {
             // assert(jacobians.size() == verticies.size());
 
             // 计算edge的鲁棒权重
-            double drho;
-            MatXX robust_information;
-            VecX robust_residual;
-            edge.second->robust_information(drho, robust_information, robust_residual);
+            // double drho;
+            // MatXX robust_information;
+            // VecX robust_residual;
+            // edge->robust_information(drho, robust_information, robust_residual);
+            edge->compute_robust();
+            auto &&robust_information = edge->get_robust_info();
+            auto &&robust_residual = edge->get_robust_res();
             for (size_t i = 0; i < verticies.size(); ++i) {
                 auto &&v_i = verticies[i];
                 if (v_i->is_fixed()) continue;    // Hessian 里不需要添加它的信息，也就是它的雅克比为 0
@@ -547,5 +553,20 @@ namespace graph_optimization {
         // LOG(INFO) <<l
         //           "1 problem::LogoutVectorSize verticies_:" << verticies_.size() <<
         //           " edges:" << edges_.size();
+    }
+
+    void Problem::clear() {
+        _t_residual_cost = 0.;
+        _t_chi2_cost = 0.;
+        _t_jacobian_cost = 0.;
+        _t_hessian_cost = 0.;
+        _t_PCG_solve_cost = 0.;
+
+        _ordering_generic = 0;
+        _chi2 = 0.;
+
+        _vertices.clear();
+        _edges.clear();
+        _vertex_to_edge.clear();
     }
 }

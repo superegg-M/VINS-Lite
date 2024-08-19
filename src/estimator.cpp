@@ -149,9 +149,9 @@ void Estimator::processImage(const map<int, vector<pair<int, Eigen::Matrix<doubl
     imageframe.pre_integration = tmp_pre_integration;
     all_image_frame.insert(make_pair(header, imageframe));
 
-#ifdef PRINT_INFO    
-    std::cout << "numbers of all_image_frame: " << all_image_frame.size() << std::endl;
-#endif
+// #ifdef PRINT_INFO    
+//     std::cout << "numbers of all_image_frame: " << all_image_frame.size() << std::endl;
+// #endif
 
 #ifdef CAIN_IMU_INTEGRATION
     tmp_pre_integration = new vins::IMUIntegration{acc_0, gyr_0, Bas[frame_count], Bgs[frame_count]};
@@ -671,7 +671,8 @@ void Estimator::MargNewFrame() {
 void Estimator::problemSolve() {
     TicToc t_new_problem;
 
-    _problem = graph_optimization::ProblemSLAM();
+    // _problem = graph_optimization::ProblemSLAM();
+    _problem.clear();
     _vertex_pose_vec.clear();
     _vertex_motion_vec.clear();
     _state_dim = 0;
@@ -701,53 +702,6 @@ void Estimator::problemSolve() {
         pose_dim += vertexExt->local_dimension();
     }
 
-    // int imu_marg = (marginalization_flag == MARGIN_OLD) ? 0 : WINDOW_SIZE - 1; 
-    // vertexCams_vec.resize(WINDOW_SIZE + 1);
-    // vertexVB_vec.resize(WINDOW_SIZE + 1);
-    // // 相机的顶点(pose和motion), WINDOW_SIZE + 1 个
-    // for (int i = 0; i < WINDOW_SIZE + 1; i++) {      
-    //     if (i == imu_marg) {
-    //         continue;
-    //     }
-    //     shared_ptr<graph_optimization::VertexPose> vertexCam(new graph_optimization::VertexPose());
-    //     Eigen::VectorXd pose(7);
-    //     pose << para_Pose[i][0], para_Pose[i][1], para_Pose[i][2], para_Pose[i][3], para_Pose[i][4], para_Pose[i][5], para_Pose[i][6];
-    //     vertexCam->set_parameters(pose);
-    //     vertexCams_vec[i] = vertexCam;
-    //     problem.add_state_vertex(vertexCam);
-    //     pose_dim += vertexCam->local_dimension();
-
-    //     shared_ptr<graph_optimization::VertexMotion> vertexVB(new graph_optimization::VertexMotion());
-    //     Eigen::VectorXd vb(9);
-    //     vb << para_SpeedBias[i][0], para_SpeedBias[i][1], para_SpeedBias[i][2],
-    //         para_SpeedBias[i][3], para_SpeedBias[i][4], para_SpeedBias[i][5],
-    //         para_SpeedBias[i][6], para_SpeedBias[i][7], para_SpeedBias[i][8];
-    //     vertexVB->set_parameters(vb);
-    //     vertexVB_vec[i] = vertexVB;
-    //     problem.add_state_vertex(vertexVB);
-    //     pose_dim += vertexVB->local_dimension();
-    // }
-    // {
-    //     int i = imu_marg;
-    //     shared_ptr<graph_optimization::VertexPose> vertexCam(new graph_optimization::VertexPose());
-    //     Eigen::VectorXd pose(7);
-    //     pose << para_Pose[i][0], para_Pose[i][1], para_Pose[i][2], para_Pose[i][3], para_Pose[i][4], para_Pose[i][5], para_Pose[i][6];
-    //     vertexCam->set_parameters(pose);
-    //     vertexCams_vec[i] = vertexCam;
-    //     problem.add_state_vertex(vertexCam);
-    //     pose_dim += vertexCam->local_dimension();
-
-    //     shared_ptr<graph_optimization::VertexMotion> vertexVB(new graph_optimization::VertexMotion());
-    //     Eigen::VectorXd vb(9);
-    //     vb << para_SpeedBias[i][0], para_SpeedBias[i][1], para_SpeedBias[i][2],
-    //         para_SpeedBias[i][3], para_SpeedBias[i][4], para_SpeedBias[i][5],
-    //         para_SpeedBias[i][6], para_SpeedBias[i][7], para_SpeedBias[i][8];
-    //     vertexVB->set_parameters(vb);
-    //     vertexVB_vec[i] = vertexVB;
-    //     problem.add_state_vertex(vertexVB);
-    //     pose_dim += vertexVB->local_dimension();
-    // }
-
     // 相机的顶点(pose和motion), WINDOW_SIZE + 1 个
     for (int i = 0; i < WINDOW_SIZE + 1; i++) {      
         shared_ptr<graph_optimization::VertexPose> vertexCam(new graph_optimization::VertexPose());
@@ -755,7 +709,7 @@ void Estimator::problemSolve() {
         pose << para_Pose[i][0], para_Pose[i][1], para_Pose[i][2], para_Pose[i][3], para_Pose[i][4], para_Pose[i][5], para_Pose[i][6];
         vertexCam->set_parameters(pose);
         vertexCams_vec.emplace_back(vertexCam);
-        // problem.add_state_vertex(vertexCam);
+        problem.add_state_vertex(vertexCam);
         pose_dim += vertexCam->local_dimension();
 
         shared_ptr<graph_optimization::VertexMotion> vertexVB(new graph_optimization::VertexMotion());
@@ -765,21 +719,12 @@ void Estimator::problemSolve() {
             para_SpeedBias[i][6], para_SpeedBias[i][7], para_SpeedBias[i][8];
         vertexVB->set_parameters(vb);
         vertexVB_vec.emplace_back(vertexVB);
-        // problem.add_state_vertex(vertexVB);
+        problem.add_state_vertex(vertexVB);
         pose_dim += vertexVB->local_dimension();
     }
 
-    // 把状态顶点加入到problem中, 被margin的顶点放在最后
+    // 记录被marg的imu
     int imu_marg = (marginalization_flag == MARGIN_OLD) ? 0 : WINDOW_SIZE - 1; 
-    for (int i = 0; i < WINDOW_SIZE + 1; i++) {
-        // if (i == imu_marg) {
-        //     continue;
-        // }
-        problem.add_state_vertex(vertexCams_vec[i]);
-        problem.add_state_vertex(vertexVB_vec[i]);
-    }
-    // problem.add_state_vertex(vertexCams_vec[imu_marg]);
-    // problem.add_state_vertex(vertexVB_vec[imu_marg]);
 
     // 边: IMU预积分误差, WINDOW_SIZE个
     for (int i = 0; i < WINDOW_SIZE; i++) {
@@ -827,47 +772,47 @@ void Estimator::problemSolve() {
             edges.clear();
         }
 #pragma omp parallel for num_threads(NUM_THREADS)
-        for (size_t n = 0; n < f_manager.features_vector.size(); ++n) {
+        for (size_t n = 0; n < f_manager.suitable_features.size(); ++n) {
             // 由于第WINDOW_SIZE帧是new frame, 其是否为key frame是不定的, 而第WINDOW_SIZE - 1帧是否为key frame也是不定的
             // 第WINDOW_SIZE - 2帧才必定是key frame, 而landmark至少需被2个key frame观测到
             // 所以landmark的start frame必须小于WINDOW_SIZE - 2才有意义
             unsigned int i = omp_get_thread_num();
-            auto &&it_per_id = f_manager.features_vector[n];
-            if (it_per_id.second->is_suitable_to_reprojection()) {
-                Vec1 inv_d(1. / it_per_id.second->estimated_depth);
-                it_per_id.second->vertex_landmark->set_parameters(inv_d);
-                vertex_vec[i].emplace_back(it_per_id.second->vertex_landmark);
+            auto &&feature_pt = f_manager.suitable_features[n];
+            // if (feature_pt->is_suitable_to_reprojection()) {
+            Vec1 inv_d(1. / feature_pt->estimated_depth);
+            feature_pt->vertex_landmark->set_parameters(inv_d);
+            vertex_vec[i].emplace_back(feature_pt->vertex_landmark);
 
-                // 遍历所有的观测 (landmark所关联的frame), 计算视觉重投影误差
-                unsigned int imu_i = it_per_id.second->start_frame_id;
-                const Vector3d &pts_i = it_per_id.second->feature_per_frame[0].point;
-                for (unsigned int index = 1; index < it_per_id.second->feature_per_frame.size(); ++index) {
-                    unsigned int imu_j = imu_i + index;
-                    const Vector3d &pts_j = it_per_id.second->feature_per_frame[index].point;
+            // 遍历所有的观测 (landmark所关联的frame), 计算视觉重投影误差
+            unsigned int imu_i = feature_pt->start_frame_id;
+            const Vector3d &pts_i = feature_pt->feature_per_frame[0].point;
+            for (unsigned int index = 1; index < feature_pt->feature_per_frame.size(); ++index) {
+                unsigned int imu_j = imu_i + index;
+                const Vector3d &pts_j = feature_pt->feature_per_frame[index].point;
 
-                    std::shared_ptr<graph_optimization::EdgeReprojection> edge(new graph_optimization::EdgeReprojection(pts_i, pts_j));
-                    std::vector<std::shared_ptr<graph_optimization::Vertex>> edge_vertex;
-                    edge->add_vertex(it_per_id.second->vertex_landmark);
-                    edge->add_vertex(vertexCams_vec[imu_i]);
-                    edge->add_vertex(vertexCams_vec[imu_j]);
-                    edge->add_vertex(vertexExt);
+                std::shared_ptr<graph_optimization::EdgeReprojection> edge(new graph_optimization::EdgeReprojection(pts_i, pts_j));
+                std::vector<std::shared_ptr<graph_optimization::Vertex>> edge_vertex;
+                edge->add_vertex(feature_pt->vertex_landmark);
+                edge->add_vertex(vertexCams_vec[imu_i]);
+                edge->add_vertex(vertexCams_vec[imu_j]);
+                edge->add_vertex(vertexExt);
 
-                    edge->set_information(information);
-                    // edge->set_loss_function(lossfunction);
+                edge->set_information(information);
+                // edge->set_loss_function(lossfunction);
 
-                    edge_vec[i].emplace_back(edge);
-                    if (imu_j == imu_marg) {
-                        marg_edges_vec[i].emplace_back(edge);
-                        marg_landmarks_vec[i].emplace_back(it_per_id.second->vertex_landmark);
-                    }
-                    if (imu_i == imu_marg) {
-                        marg_edges_vec[i].emplace_back(edge);
-                    }
+                edge_vec[i].emplace_back(edge);
+                if (imu_j == imu_marg) {
+                    marg_edges_vec[i].emplace_back(edge);
+                    marg_landmarks_vec[i].emplace_back(feature_pt->vertex_landmark);
                 }
                 if (imu_i == imu_marg) {
-                    marg_landmarks_vec[i].emplace_back(it_per_id.second->vertex_landmark);
+                    marg_edges_vec[i].emplace_back(edge);
                 }
             }
+            if (imu_i == imu_marg) {
+                marg_landmarks_vec[i].emplace_back(feature_pt->vertex_landmark);
+            }
+            // }
         }
         // std::cout << "imu_marg = " << imu_marg << std::endl;
 
@@ -925,15 +870,15 @@ void Estimator::problemSolve() {
                     problem.add_reproj_edge(edge);
 
                     if (imu_j == imu_marg) {
-                        marg_edges.emplace_back(edge);
-                        _marg_landmarks.emplace_back(it_per_id.second->vertex_landmark);
+                        _marg_edges.emplace_back(edge);
+                        _marg_landmarks.emplace_back(it_per_id.second.vertex_landmark);
                     }
                     if (imu_i == imu_marg) {
                         _marg_edges.emplace_back(edge);
                     }
                 }
                 if (imu_i == imu_marg) {
-                    _marg_landmarks.emplace_back(it_per_id.second->vertex_landmark);
+                    _marg_landmarks.emplace_back(it_per_id.second.vertex_landmark);
                 }
             }
         }
@@ -970,15 +915,15 @@ void Estimator::problemSolve() {
     // update bprior_,  Hprior_ do not need update
     if (Hprior_.rows() > 0) {
         bprior_ = problem.get_b_prior();
-#ifdef PRINT_INFO        
-        std::cout << "----------- update bprior -------------\n";
-        std::cout << "             before: " << bprior_.norm() << std::endl;
-        std::cout << "                     " << errprior_.norm() << std::endl;
+// #ifdef PRINT_INFO        
+//         std::cout << "----------- update bprior -------------\n";
+//         std::cout << "             before: " << bprior_.norm() << std::endl;
+//         std::cout << "                     " << errprior_.norm() << std::endl;
         
-        // errprior_ = problem.get_err_prior();
-        std::cout << "             after: " << bprior_.norm() << std::endl;
-        std::cout << "                    " << errprior_.norm() << std::endl;
-#endif        
+//         // errprior_ = problem.get_err_prior();
+//         std::cout << "             after: " << bprior_.norm() << std::endl;
+//         std::cout << "                    " << errprior_.norm() << std::endl;
+// #endif        
     }
 
     // update parameter
@@ -997,11 +942,14 @@ void Estimator::problemSolve() {
     // 遍历每一个特征
 #ifdef USE_OPENMP
     unsigned int feature_index = 0;
-    for (size_t n = 0; n < f_manager.features_vector.size(); ++n) {
-        auto &&it_per_id = f_manager.features_vector[n];
-        if (it_per_id.second->is_suitable_to_reprojection()) {
-            para_Feature[feature_index++][0] = it_per_id.second->vertex_landmark->get_parameters()[0];
-        }
+    // for (size_t n = 0; n < f_manager.features_vector.size(); ++n) {
+    //     auto &&it_per_id = f_manager.features_vector[n];
+    //     if (it_per_id.second->is_suitable_to_reprojection()) {
+    //         para_Feature[feature_index++][0] = it_per_id.second->vertex_landmark->get_parameters()[0];
+    //     }
+    // }
+    for (size_t n = 0; n < f_manager.suitable_features.size(); ++n) {
+        para_Feature[feature_index++][0] = f_manager.suitable_features[n]->vertex_landmark->get_parameters()[0];
     }
 #else    
     for (int i = 0; i < vertexPt_vec.size(); ++i) {

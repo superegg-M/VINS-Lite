@@ -115,6 +115,7 @@ public:
 #ifdef USE_OPENMP
     // constexpr static unsigned int NUM_THREADS = 8;
     vector<pair<unsigned long, FeaturePerId *>> features_vector;
+    vector<FeaturePerId *> suitable_features;
 #endif
     vector<unsigned long> feature_id_erase;
     unsigned int last_track_num {0};

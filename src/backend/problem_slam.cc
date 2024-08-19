@@ -18,6 +18,7 @@ namespace graph_optimization {
 
     /*
     * marginalize 所有和 frame 相连的 edge: imu factor, projection factor
+<<<<<<< HEAD
     * vertex排序必须满足: extra, pose[0], motion[0], ..., pose[WINDOWS_SIZE], motion[WINDOWS_SIZE], pose[marg_index], motion[marg_index]
     * 若不满足, 则需要外部调整_H_prior和_b_prior的顺序, 以适应vertex的排序
     * */
@@ -306,6 +307,8 @@ namespace graph_optimization {
 
     /*
     * marginalize 所有和 frame 相连的 edge: imu factor, projection factor
+=======
+>>>>>>> 16bea4d4b6bbe0d968fb722ecd77e6dde840c3a9
     * vertex排序必须满足: extra, pose[0], motion[0], pose[1], motion[1], ..., pose[WINDOWS_SIZE], motion[WINDOWS_SIZE]
     * 若不满足, 则需要外部调整_H_prior和_b_prior的顺序, 以适应vertex的排序
     * */
@@ -346,10 +349,12 @@ namespace graph_optimization {
             // assert(jacobians.size() == vertices.size());
 
             // 计算edge的鲁棒权重
-            double drho;
-            MatXX robust_information;
-            VecX robust_residual;
-            edge->robust_information(drho, robust_information, robust_residual);
+            // double drho;
+            // MatXX robust_information;
+            // VecX robust_residual;
+            // edge->robust_information(drho, robust_information, robust_residual);
+            auto &&robust_information = edge->get_robust_info();
+            auto &&robust_residual = edge->get_robust_res();
 
             for (size_t i = 0; i < vertices.size(); ++i) {
                 auto &&v_i = vertices[i];
@@ -584,10 +589,12 @@ namespace graph_optimization {
             // assert(jacobians.size() == vertices.size());
 
             // 计算edge的鲁棒权重
-            double drho;
-            MatXX robust_information;
-            VecX robust_residual;
-            edge->robust_information(drho, robust_information, robust_residual);
+            // double drho;
+            // MatXX robust_information;
+            // VecX robust_residual;
+            // edge->robust_information(drho, robust_information, robust_residual);
+            auto &&robust_information = edge->get_robust_info();
+            auto &&robust_residual = edge->get_robust_res();
 
             for (size_t i = 0; i < vertices.size(); ++i) {
                 auto &&v_i = vertices[i];
@@ -640,10 +647,12 @@ namespace graph_optimization {
             // assert(jacobians.size() == vertices.size());
 
             // 计算edge的鲁棒权重
-            double drho;
-            MatXX robust_information;
-            VecX robust_residual;
-            edge->robust_information(drho, robust_information, robust_residual);
+            // double drho;
+            // MatXX robust_information;
+            // VecX robust_residual;
+            // edge->robust_information(drho, robust_information, robust_residual);
+            auto &&robust_information = edge->get_robust_info();
+            auto &&robust_residual = edge->get_robust_res();
 
             for (size_t i = 0; i < vertices.size(); ++i) {
                 auto &&v_i = vertices[i];
@@ -1044,19 +1053,27 @@ namespace graph_optimization {
     }
 
     bool ProblemSLAM::add_reproj_edge(const std::shared_ptr<Edge> &edge) {
-        if (Problem::add_edge(edge)) {
-            _reproj_edges.emplace_back(edge);
-            return true;
-        }
-        return false;
+        _edges.emplace_back(edge);
+        _reproj_edges.emplace_back(edge);
+        return true;
+        
+        // if (Problem::add_edge(edge)) {
+        //     _reproj_edges.emplace_back(edge);
+        //     return true;
+        // }
+        // return false;
     }
 
     bool ProblemSLAM::add_imu_edge(const std::shared_ptr<Edge> &edge) {
-        if (Problem::add_edge(edge)) {
-            _imu_edges.emplace_back(edge);
-            return true;
-        }
-        return false;
+        _edges.emplace_back(edge);
+        _imu_edges.emplace_back(edge);
+        return true;
+
+        // if (Problem::add_edge(edge)) {
+        //     _imu_edges.emplace_back(edge);
+        //     return true;
+        // }
+        // return false;
     }
 
     void ProblemSLAM::update_hessian() {
@@ -1086,10 +1103,13 @@ namespace graph_optimization {
             // assert(jacobians.size() == verticies.size());
 
             // 计算edge的鲁棒权重
-            double drho;
-            MatXX robust_information;
-            VecX robust_residual;
-            edge->robust_information(drho, robust_information, robust_residual);
+            // double drho;
+            // MatXX robust_information;
+            // VecX robust_residual;
+            // edge->robust_information(drho, robust_information, robust_residual);
+            edge->compute_robust();
+            auto &&robust_information = edge->get_robust_info();
+            auto &&robust_residual = edge->get_robust_res();
             for (size_t i = 0; i < verticies.size(); ++i) {
                 auto &&v_i = verticies[i];
                 if (v_i->is_fixed()) continue;    // Hessian 里不需要添加它的信息，也就是它的雅克比为 0
@@ -1138,10 +1158,13 @@ namespace graph_optimization {
             // assert(jacobians.size() == verticies.size());
 
             // 计算edge的鲁棒权重
-            double drho;
-            MatXX robust_information;
-            VecX robust_residual;
-            edge->robust_information(drho, robust_information, robust_residual);
+            // double drho;
+            // MatXX robust_information;
+            // VecX robust_residual;
+            // edge->robust_information(drho, robust_information, robust_residual);
+            edge->compute_robust();
+            auto &&robust_information = edge->get_robust_info();
+            auto &&robust_residual = edge->get_robust_res();
             for (size_t i = 0; i < verticies.size(); ++i) {
                 auto &&v_i = verticies[i];
                 if (v_i->is_fixed()) continue;    // Hessian 里不需要添加它的信息，也就是它的雅克比为 0
@@ -1239,5 +1262,15 @@ namespace graph_optimization {
 //        _delta_x = VecX::Zero(size);  // initial delta_x = 0_n;
 
         _t_hessian_cost += t_h.toc();
+    }
+
+    void ProblemSLAM::clear() {
+        Problem::clear();
+        _pose_vertices.clear();
+        _landmark_vertices.clear();
+        _reproj_edges.clear();
+        _imu_edges.clear();
+        _ordering_poses = 0;
+        _ordering_landmarks = 0;
     }
 }
