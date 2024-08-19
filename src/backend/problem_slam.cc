@@ -762,27 +762,27 @@ namespace graph_optimization {
     }
 
     bool ProblemSLAM::add_reproj_edge(const std::shared_ptr<Edge> &edge) {
-        _edges.emplace_back(edge);
-        _reproj_edges.emplace_back(edge);
-        return true;
+        // _edges.emplace_back(edge);
+        // _reproj_edges.emplace_back(edge);
+        // return true;
         
-        // if (Problem::add_edge(edge)) {
-        //     _reproj_edges.emplace_back(edge);
-        //     return true;
-        // }
-        // return false;
+        if (Problem::add_edge(edge)) {
+            _reproj_edges.emplace_back(edge);
+            return true;
+        }
+        return false;
     }
 
     bool ProblemSLAM::add_imu_edge(const std::shared_ptr<Edge> &edge) {
-        _edges.emplace_back(edge);
-        _imu_edges.emplace_back(edge);
-        return true;
+        // _edges.emplace_back(edge);
+        // _imu_edges.emplace_back(edge);
+        // return true;
 
-        // if (Problem::add_edge(edge)) {
-        //     _imu_edges.emplace_back(edge);
-        //     return true;
-        // }
-        // return false;
+        if (Problem::add_edge(edge)) {
+            _imu_edges.emplace_back(edge);
+            return true;
+        }
+        return false;
     }
 
     void ProblemSLAM::update_hessian() {

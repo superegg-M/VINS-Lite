@@ -93,7 +93,7 @@ void System::PubImageData(double dStampSec, Mat &img)
     TicToc t_r;
     // cout << "3 PubImageData t : " << dStampSec << endl;
     trackerData[0].readImage(img, dStampSec);
-    std::cout << "0 Frontend trackerData dt: " << t_r.toc() << std::endl;
+    // std::cout << "0 Frontend trackerData dt: " << t_r.toc() << std::endl;
 
     for (unsigned int i = 0;; i++)
     {
@@ -337,6 +337,8 @@ void System::ProcessBackEnd()
             estimator.processImage(image, img_msg->header);
             static double dt_mean = 0.;
             static double n = 1.;
+            static double dt_average = 0.;
+            static unsigned int nn = 1;
             if (estimator.solver_flag == Estimator::SolverFlag::NON_LINEAR)
             {
                 Vector3d p_wi;
@@ -348,7 +350,8 @@ void System::ProcessBackEnd()
                 double dt = t_processImage.toc();
                 dt_mean += (dt - dt_mean) / n;
                 n = std::min(n + 1., 100.);
-                cout << "1 BackEnd processImage dt: " << fixed << t_processImage.toc() << " mean dt:" << dt_mean << " stamp: " <<  dStamp << " p_wi: " << p_wi.transpose() << endl;
+                dt_average += (dt - dt_average) / double(nn++);
+                cout << "1 BackEnd processImage dt: " << fixed << t_processImage.toc() << " mean dt: " << dt_mean << " average: " << dt_average << " stamp: " <<  dStamp << " p_wi: " << p_wi.transpose() << endl;
                 ofs_pose << fixed << dStamp << " " << p_wi.transpose() << " " << q_wi.coeffs().transpose() << endl;
             }
         }
