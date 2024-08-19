@@ -646,8 +646,8 @@ void Estimator::MargOldFrame() {
     auto &vertexVB_vec = _vertex_motion_vec;
 //    auto &pose_dim = _state_dim;
 
-    problem.marginalize(vertexCams_vec[0], vertexVB_vec[0]);
-    // problem.marginalize(vertexCams_vec[0], vertexVB_vec[0], _marg_landmarks, _marg_edges);
+    // problem.marginalize(vertexCams_vec[0], vertexVB_vec[0]);
+    problem.marginalize(vertexCams_vec[0], vertexVB_vec[0], _marg_landmarks, _marg_edges);
     // problem.marginalize(vertexCams_vec[0], vertexVB_vec[0], _marg_landmarks, _marg_edges, true);
     Hprior_ = problem.get_h_prior();
     bprior_ = problem.get_b_prior();
@@ -660,8 +660,8 @@ void Estimator::MargNewFrame() {
     auto &vertexVB_vec = _vertex_motion_vec;
 //    auto &pose_dim = _state_dim;
 
-    problem.marginalize(vertexCams_vec[WINDOW_SIZE - 1], vertexVB_vec[WINDOW_SIZE - 1]);
-    // problem.marginalize(vertexCams_vec[WINDOW_SIZE - 1], vertexVB_vec[WINDOW_SIZE - 1], _marg_landmarks, _marg_edges);
+    // problem.marginalize(vertexCams_vec[WINDOW_SIZE - 1], vertexVB_vec[WINDOW_SIZE - 1]);
+    problem.marginalize(vertexCams_vec[WINDOW_SIZE - 1], vertexVB_vec[WINDOW_SIZE - 1], _marg_landmarks, _marg_edges);
     // problem.marginalize(vertexCams_vec[WINDOW_SIZE - 1], vertexVB_vec[WINDOW_SIZE - 1], _marg_landmarks, _marg_edges, false);
     Hprior_ = problem.get_h_prior();
     bprior_ = problem.get_b_prior();
