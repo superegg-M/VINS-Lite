@@ -3,15 +3,15 @@ project(vins_estimator)
 
 set(CMAKE_BUILD_TYPE "Release")
 set(CMAKE_CXX_FLAGS "-std=c++17")
-# set(CMAKE_CXX_FLAGS_RELEASE "-O3 -Wall -g")
-set(CMAKE_CXX_FLAGS_RELEASE "-O3 -Wall -g -fopenmp -mfpmath=sse -march=native -mtune=native -funroll-loops -finline-functions -ffast-math -ftree-vectorize")
+set(CMAKE_CXX_FLAGS_RELEASE "-O3 -march=armv8-a -Wall -g")
+# set(CMAKE_CXX_FLAGS_RELEASE "-O3 -Wall -g -fopenmp -mfpmath=sse -march=native -mtune=native -funroll-loops -finline-functions -ffast-math -ftree-vectorize")
 
 set(CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake)
 
 find_package(Eigen3 REQUIRED)
 find_package(Ceres REQUIRED)
 find_package(Pangolin REQUIRED)
-find_package(OpenCV REQUIRED)
+find_package(OpenCV 4 REQUIRED)
 find_package(Boost REQUIRED COMPONENTS filesystem program_options system)
 
 find_package ( OpenMP REQUIRED )
@@ -78,7 +78,7 @@ ADD_LIBRARY(MyVio SHARED
     src/backend/imu_integration.cc
     )
 
-target_compile_definitions(MyVio PRIVATE -DNUM_THREADS=8)    
+target_compile_definitions(MyVio PRIVATE -DNUM_THREADS=4)    
 # target_compile_definitions(MyVio PRIVATE -DPRINT_INFO)
 
 target_link_libraries(MyVio  
