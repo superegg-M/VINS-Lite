@@ -1,0 +1,1 @@
+export GOMP_CPU_AFFINITY="4-7"
