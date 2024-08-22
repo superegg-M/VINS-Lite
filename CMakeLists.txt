@@ -80,6 +80,7 @@ ADD_LIBRARY(MyVio SHARED
 
 target_compile_definitions(MyVio PRIVATE -DNUM_THREADS=4)    
 # target_compile_definitions(MyVio PRIVATE -DPRINT_INFO)
+# target_compile_definitions(MyVio PRIVATE -DDISPLAY_TRAJ)
 
 target_link_libraries(MyVio  
   ${OpenCV_LIBS}  
