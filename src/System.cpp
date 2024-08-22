@@ -1,6 +1,7 @@
 #include "System.h"
 
 #include <pangolin/pangolin.h>
+#include<opencv2/imgproc/types_c.h>
 
 using namespace std;
 using namespace cv;
@@ -151,6 +152,7 @@ void System::PubImageData(double dStampSec, Mat &img)
         }
     }
 
+#ifdef DISPLAY_TRAJ
 #ifdef __linux__
     cv::Mat show_img;
 	cv::cvtColor(img, show_img, CV_GRAY2RGB);
@@ -162,12 +164,13 @@ void System::PubImageData(double dStampSec, Mat &img)
 			cv::circle(show_img, trackerData[0].cur_pts[j], 2, cv::Scalar(255 * (1 - len), 0, 255 * len), 2);
 		}
 
-        cv::namedWindow("IMAGE", CV_WINDOW_AUTOSIZE);
+        cv::namedWindow("IMAGE", cv::WINDOW_AUTOSIZE);
 		cv::imshow("IMAGE", show_img);
         cv::waitKey(1);
 	}
 #endif    
     // cout << "5 PubImage" << endl;
+#endif    
     
 }
 

@@ -7,9 +7,9 @@
 #include <thread>
 #include <iomanip>
 
-#include <cv.h>
+//#include <cv.h>
 #include <opencv2/opencv.hpp>
-#include <highgui.h>
+#include <opencv2/highgui/highgui.hpp>
 #include <eigen3/Eigen/Dense>
 #include "System.h"
 
@@ -167,10 +167,12 @@ int main(int argc, char **argv)
 
 	std::thread thd_PubImageData(PubImageData);
 
+#ifdef DISPLAY_TRAJ
 #ifdef __linux__	
 	std::thread thd_Draw(&System::Draw, pSystem);
 #elif __APPLE__
 	DrawIMGandGLinMainThrd();
+#endif
 #endif
 
 	thd_PubImuData.join();
