@@ -182,15 +182,31 @@ namespace graph_optimization {
 
             // (Hss - Hsl * Hll^-1 * Hls) * xs = bs - Hsl * Hll^-1 * bl
 #ifdef USE_OPENMP
-            h_state_schur = MatXX::Zero(state_dim, state_dim);
-#pragma omp parallel for num_threads(NUM_THREADS) default(none) shared(h_state_landmark, h_state_schur, temp_H, state_dim, marginalized_landmarks_size)
-            for (ulong i = 0; i < state_dim; ++i) {
-                h_state_schur(i, i) = -temp_H.col(i).dot(h_state_landmark.col(i).tail(marginalized_landmarks_size));
-                for (ulong j = i + 1; j < state_dim; ++j) {
-                    h_state_schur(i, j) = -temp_H.col(j).dot(h_state_landmark.col(i).tail(marginalized_landmarks_size));
-                    h_state_schur(j, i) = h_state_schur(i, j);
+            static std::vector<std::pair<ulong, ulong>> coord;
+            if (coord.size() != ((state_dim + 1) * state_dim) / 2) {
+                coord.clear();
+                coord.reserve(((state_dim + 1) * state_dim) / 2);
+                for (ulong i = 0; i < state_dim; ++i) {
+                    for (ulong j = i; j < state_dim; ++j) {
+                        coord.emplace_back(i, j);
+                    }
                 }
             }
+            h_state_schur = MatXX::Zero(state_dim, state_dim);
+#pragma omp parallel for num_threads(NUM_THREADS) default(none) shared(coord, h_state_landmark, h_state_schur, temp_H, state_dim, marginalized_landmarks_size)
+            for (size_t n = 0; n < coord.size(); ++n) {
+                ulong i = coord[n].first;
+                ulong j = coord[n].second;
+                h_state_schur(i, j) = -temp_H.col(j).dot(h_state_landmark.col(i).tail(marginalized_landmarks_size));
+                h_state_schur(j, i) = h_state_schur(i, j);
+            }
+            // for (ulong i = 0; i < state_dim; ++i) {
+            //     h_state_schur(i, i) = -temp_H.col(i).dot(h_state_landmark.col(i).tail(marginalized_landmarks_size));
+            //     for (ulong j = i + 1; j < state_dim; ++j) {
+            //         h_state_schur(i, j) = -temp_H.col(j).dot(h_state_landmark.col(i).tail(marginalized_landmarks_size));
+            //         h_state_schur(j, i) = h_state_schur(i, j);
+            //     }
+            // }
             h_state_schur += h_state_landmark.block(0, 0, state_dim, state_dim);
 #else
             h_state_schur = h_state_landmark.block(0, 0, state_dim, state_dim) - h_state_landmark.block(0, state_dim, state_dim, marginalized_landmarks_size) * temp_H;
@@ -224,13 +240,13 @@ namespace graph_optimization {
         MatXX h_10_hat = h_11_ldlt.solve(h_state_schur.block(marg_index, 0, marg_dim, marg_index));
         MatXX h_12_hat = h_11_ldlt.solve(h_state_schur.block(marg_index, res_index, marg_dim, res_dim));
 
-        _h_prior.block(0, 0, marg_index, marg_index).noalias() = h_state_schur.block(0, 0, marg_index, marg_index) 
-                                                                 - h_state_schur.block(0, marg_index, marg_index, marg_dim) * h_10_hat;
+        _h_prior.block(0, 0, marg_index, marg_index).triangularView<Eigen::Upper>() = h_state_schur.block(0, 0, marg_index, marg_index) 
+                                                                                      - h_state_schur.block(0, marg_index, marg_index, marg_dim) * h_10_hat;
         _h_prior.block(0, marg_index, marg_index, res_dim).noalias() = h_state_schur.block(0, res_index, marg_index, res_dim) 
                                                                        - h_state_schur.block(0, marg_index, marg_index, marg_dim) * h_12_hat;
-        _h_prior.block(marg_index, 0, res_dim, marg_index).noalias() = _h_prior.block(0, marg_index, marg_index, res_dim).transpose();
-        _h_prior.block(marg_index, marg_index, res_dim, res_dim).noalias() = h_state_schur.block(res_index, res_index, res_dim, res_dim) 
-                                                                             - h_state_schur.block(res_index, marg_index, res_dim, marg_dim) * h_12_hat;
+        _h_prior.block(marg_index, marg_index, res_dim, res_dim).triangularView<Eigen::Upper>() = h_state_schur.block(res_index, res_index, res_dim, res_dim) 
+                                                                                                  - h_state_schur.block(res_index, marg_index, res_dim, marg_dim) * h_12_hat;
+        _h_prior = _h_prior.selfadjointView<Eigen::Upper>();
 
         _b_prior.head(marg_index) = b_state_schur.head(marg_index) - h_10_hat.transpose() * b_state_schur.segment(marg_index, marg_dim);
         _b_prior.segment(marg_index, res_dim) = b_state_schur.tail(res_dim) - h_12_hat.transpose() * b_state_schur.segment(marg_index, marg_dim);
