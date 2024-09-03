@@ -336,29 +336,6 @@ void System::ProcessBackEnd()
                 xyz_uv_velocity << x, y, z, p_u, p_v, velocity_x, velocity_y;
                 image[feature_id].emplace_back(camera_id, xyz_uv_velocity);
             }
-            // // 替换为vector, 方便processImage中进行多线程操作
-            // std::vector<std::pair<int, vector<pair<int, Eigen::Matrix<double, 7, 1>>>>> image;
-            // image.resize(img_msg->points.size() / NUM_OF_CAM);
-            // for (unsigned int i = 0; i < img_msg->points.size(); i += NUM_OF_CAM) {
-            //     unsigned int index = i / NUM_OF_CAM;
-            //     int v = img_msg->id_of_point[i] + 0.5;
-            //     int feature_id = v;
-            //     image[index].first = feature_id;
-            //     for (unsigned int j = i; j < i + NUM_OF_CAM; ++j) {
-            //         int camera_id = j - i;
-            //         double x = img_msg->points[j].x();
-            //         double y = img_msg->points[j].y();
-            //         double z = img_msg->points[j].z();
-            //         double p_u = img_msg->u_of_point[j];
-            //         double p_v = img_msg->v_of_point[j];
-            //         double velocity_x = img_msg->velocity_x_of_point[j];
-            //         double velocity_y = img_msg->velocity_y_of_point[j];
-            //         assert(z == 1);
-            //         Eigen::Matrix<double, 7, 1> xyz_uv_velocity;
-            //         xyz_uv_velocity << x, y, z, p_u, p_v, velocity_x, velocity_y;
-            //         image[index].second.emplace_back(camera_id, xyz_uv_velocity);
-            //     }
-            // }
             TicToc t_processImage;
             estimator.processImage(image, img_msg->header);
             static double dt_mean = 0.;

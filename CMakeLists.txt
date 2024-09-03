@@ -94,6 +94,7 @@ target_link_libraries(run_euroc
   MyVio  
   -lpthread
   OpenMP::OpenMP_CXX) 
+# target_compile_definitions(run_euroc PRIVATE -DDISPLAY_TRAJ)
 
 add_executable(testCurveFitting test/CurveFitting.cpp)
 target_link_libraries(testCurveFitting MyVio)
