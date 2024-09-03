@@ -94,11 +94,11 @@ namespace graph_optimization {
         // 每次重新计数
         _ordering_generic = 0;
 
-        // Note: _vertices 是 map 类型的, 顺序是按照 id 号排序的
+        // Note: 这里不能用多线程!!!
         // 统计带估计的所有变量的总维度
-#ifdef USE_OPENMP
-#pragma omp parallel for num_threads(NUM_THREADS) default(none)
-#endif
+// #ifdef USE_OPENMP
+// #pragma omp parallel for num_threads(NUM_THREADS) default(none)
+// #endif
         for (size_t i = 0; i < _vertices.size(); ++i) {
             _vertices[i]->set_ordering_id(_ordering_generic);
             _ordering_generic += _vertices[i]->local_dimension();  // 所有的优化变量总维数
@@ -109,20 +109,27 @@ namespace graph_optimization {
         TicToc t_h;
 
         ulong size = _ordering_generic;
-        MatXX H(MatXX::Zero(size, size));       ///< Hessian矩阵
-        VecX b(VecX::Zero(size));       ///< 负梯度
+        if (_hessian.rows() != size) {
+            _hessian = MatXX::Zero(size, size); ///< Hessian矩阵
+            _b = VecX::Zero(size);  ///< 负梯度 
+        } else {
+            _hessian.setZero();
+            _b.setZero();
+        }
 
 #ifdef USE_OPENMP
-        MatXX Hs[NUM_THREADS];       ///< Hessian矩阵
-        VecX bs[NUM_THREADS];       ///< 负梯度
-        for (unsigned int i = 0; i < NUM_THREADS; ++i) {
-            Hs[i] = MatXX::Zero(size, size);
-            bs[i] = VecX::Zero(size);
-        }
+        // MatXX Hs[NUM_THREADS];       ///< Hessian矩阵
+        // VecX bs[NUM_THREADS];       ///< 负梯度
+        // for (unsigned int i = 0; i < NUM_THREADS; ++i) {
+        //     Hs[i] = MatXX::Zero(size, size);
+        //     bs[i] = VecX::Zero(size);
+        // }
+        auto H = _hessian.data();
+        auto b = _b.data();
 
         // 遍历每个残差，并计算他们的雅克比，得到最后的 H = J^T * J
 //        omp_set_num_threads(NUM_THREADS);
-#pragma omp parallel for num_threads(NUM_THREADS) default(none) shared(Hs, bs)
+#pragma omp parallel for num_threads(NUM_THREADS) default(none) shared(H, b, size)
         for (size_t n = 0; n < _edges.size(); ++n) {//for (auto &edge: edges) {
             unsigned int index = omp_get_thread_num();
 
@@ -156,33 +163,53 @@ namespace graph_optimization {
                     ulong index_j = v_j->ordering_id();
                     ulong dim_j = v_j->local_dimension();
 
-                    if (index_i < index_j) {
-                        Hs[index].block(index_i, index_j, dim_i, dim_j).noalias() += JtW * jacobian_j;
-                    } else if (index_i > index_j) {
-                        Hs[index].block(index_j, index_i, dim_j, dim_i).noalias() += (JtW * jacobian_j).transpose();
-                    } else {
-                        Hs[index].block(index_i, index_i, dim_i, dim_i).triangularView<Eigen::Upper>() += JtW * jacobian_j;
-                    }
+                    // if (index_i < index_j) {
+                    //     Hs[index].block(index_i, index_j, dim_i, dim_j).noalias() += JtW * jacobian_j;
+                    // } else if (index_i > index_j) {
+                    //     Hs[index].block(index_j, index_i, dim_j, dim_i).noalias() += (JtW * jacobian_j).transpose();
+                    // } else {
+                    //     Hs[index].block(index_i, index_i, dim_i, dim_i).triangularView<Eigen::Upper>() += JtW * jacobian_j;
+                    // }
 
-// //                    assert(v_j->ordering_id() != -1);
-//                     MatXX hessian = JtW * jacobian_j;   // TODO: 这里能继续优化, 因为J'*W*J也是对称矩阵
-//                     // 所有的信息矩阵叠加起来
-//                     Hs[index].block(index_i, index_j, dim_i, dim_j).noalias() += hessian;
-//                     if (j != i) {
-//                         // 对称的下三角
-//                         Hs[index].block(index_j, index_i, dim_j, dim_i).noalias() += hessian.transpose();
-//                     }
+//                    assert(v_j->ordering_id() != -1);
+                    MatXX hessian = JtW * jacobian_j;   // TODO: 这里能继续优化, 因为J'*W*J也是对称矩阵
+                    auto h_pt = hessian.data();
+                    // 所有的信息矩阵叠加起来
+                    for (ulong c = 0; c < dim_j; ++c) {
+                        for (ulong r = 0; r < dim_i; ++r) {
+                            #pragma omp atomic
+                            H[size * (index_j + c) + index_i + r] += *(h_pt + dim_i * c + r);
+                        }
+                    }
+                    // Hs[index].block(index_i, index_j, dim_i, dim_j).noalias() += hessian;
+                    if (j != i) {
+                        // 对称的下三角
+                        for (ulong c = 0; c < dim_j; ++c) {
+                            for (ulong r = 0; r < dim_i; ++r) {
+                                #pragma omp atomic
+                                H[size * (index_i + r) + index_j + c] += *(h_pt + dim_i * c + r);
+                            } 
+                        }
+                        // Hs[index].block(index_j, index_i, dim_j, dim_i).noalias() += hessian.transpose();
+                    }
                 }
-                bs[index].segment(index_i, dim_i).noalias() -= jacobian_i.transpose() * robust_residual;
+                VecX g = jacobian_i.transpose() * robust_residual;
+                auto g_pt = g.data();
+                for (ulong r = 0; r < dim_i; ++r) {
+                    #pragma omp atomic
+                    b[index_i + r] -= *(g_pt + r);
+                }
+                // bs[index].segment(index_i, dim_i).noalias() -= jacobian_i.transpose() * robust_residual;
             }
         }
 
-        for (unsigned int i = 0; i < NUM_THREADS; ++i) {
-            // H += Hs[i];
-            H.triangularView<Eigen::Upper>() += Hs[i];
-            b += bs[i];
-            // _t_hessian_cost += t_cost[i];
-        }
+        // for (unsigned int i = 0; i < NUM_THREADS; ++i) {
+        //     // H += Hs[i];
+        //     _hessian.triangularView<Eigen::Upper>() += Hs[i];
+        //     _b += bs[i];
+        //     // _t_hessian_cost += t_cost[i];
+        // }
+        // _hessian = _hessian.selfadjointView<Eigen::Upper>();
 #else
         // 遍历每个残差，并计算他们的雅克比，得到最后的 H = J^T * J
         for (auto &edge: edges) {
@@ -218,20 +245,17 @@ namespace graph_optimization {
                     // assert(v_j->ordering_id() != -1);
                     MatXX hessian = JtW * jacobian_j;   // TODO: 这里能继续优化, 因为J'*W*J也是对称矩阵
                     // 所有的信息矩阵叠加起来
-                    H.block(index_i, index_j, dim_i, dim_j).noalias() += hessian;
+                    _hessian.block(index_i, index_j, dim_i, dim_j).noalias() += hessian;
                     if (j != i) {
                         // 对称的下三角
-                        H.block(index_j, index_i, dim_j, dim_i).noalias() += hessian.transpose();
+                        _hessian.block(index_j, index_i, dim_j, dim_i).noalias() += hessian.transpose();
                     }
                 }
-                b.segment(index_i, dim_i).noalias() -= jacobian_i.transpose() * robust_residual;
+                _b.segment(index_i, dim_i).noalias() -= jacobian_i.transpose() * robust_residual;
             }
 
         }
 #endif
-        // _hessian = H;
-        _hessian = H.selfadjointView<Eigen::Upper>();
-        _b = b;
 
         // 叠加先验
         add_prior_to_hessian();

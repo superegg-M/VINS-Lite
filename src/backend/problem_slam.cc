@@ -7,6 +7,9 @@
 #include "../thirdparty/Sophus/sophus/se3.hpp"
 #include "../../include/parameters.h"
 #include <omp.h>
+#include <Eigen/Sparse>
+#include <valarray>
+#include <atomic>
 
 #include "backend/problem_slam.h"
 
@@ -41,20 +44,15 @@ namespace graph_optimization {
         }
 
 #ifdef USE_OPENMP
-        MatXX Hs[NUM_THREADS];       ///< Hessian矩阵
-        VecX bs[NUM_THREADS];       ///< 负梯度
-        for (unsigned int i = 0; i < NUM_THREADS; ++i) {
-            Hs[i] = MatXX::Zero(cols, cols);
-            bs[i] = VecX::Zero(cols);
-        }
-
-#pragma omp parallel for num_threads(NUM_THREADS) default(none) shared(marginalized_edges, Hs, bs)
+        auto H = h_state_landmark.data();   ///< Hessian矩阵
+        auto b = b_state_landmark.data();   ///< 负梯度
+#pragma omp parallel for num_threads(NUM_THREADS) default(none) shared(marginalized_edges, H, b, cols)
         for (size_t n = 0; n < marginalized_edges.size(); ++n) {
             unsigned int index = omp_get_thread_num();
 
             auto &edge = marginalized_edges[n];
             auto &&jacobians = edge->jacobians();
-            auto &&vertices = edge->vertices();
+            auto &&verticies = edge->vertices();
             // assert(jacobians.size() == vertices.size());
 
             // 计算edge的鲁棒权重
@@ -65,9 +63,9 @@ namespace graph_optimization {
             auto &&robust_information = edge->get_robust_info();
             auto &&robust_residual = edge->get_robust_res();
 
-            for (size_t i = 0; i < vertices.size(); ++i) {
-                auto &&v_i = vertices[i];
-                if (v_i->is_fixed()) continue;
+            for (size_t i = 0; i < verticies.size(); ++i) {
+                auto &&v_i = verticies[i];
+                if (v_i->is_fixed()) continue;    // Hessian 里不需要添加它的信息，也就是它的雅克比为 0
 
                 auto &&jacobian_i = jacobians[i];
                 if (jacobian_i.rows() == 0) continue;
@@ -76,8 +74,8 @@ namespace graph_optimization {
                 ulong dim_i = v_i->local_dimension();
 
                 MatXX JtW = jacobian_i.transpose() * robust_information.selfadjointView<Eigen::Upper>();
-                for (size_t j = i; j < vertices.size(); ++j) {
-                    auto &&v_j = vertices[j];
+                for (size_t j = i; j < verticies.size(); ++j) {
+                    auto &&v_j = verticies[j];
                     if (v_j->is_fixed()) continue;
 
                     auto &&jacobian_j = jacobians[j];
@@ -86,31 +84,44 @@ namespace graph_optimization {
                     ulong index_j = v_j->ordering_id();
                     ulong dim_j = v_j->local_dimension();
 
-                    if (index_i < index_j) {
-                        Hs[index].block(index_i, index_j, dim_i, dim_j).noalias() += JtW * jacobian_j;
-                    } else if (index_i > index_j) {
-                        Hs[index].block(index_j, index_i, dim_j, dim_i).noalias() += (JtW * jacobian_j).transpose();
-                    } else {
-                        Hs[index].block(index_i, index_i, dim_i, dim_i).triangularView<Eigen::Upper>() += JtW * jacobian_j;
+                    // if (index_i < index_j) {
+                    //     Hs[index].block(index_i, index_j, dim_i, dim_j).noalias() += JtW * jacobian_j;
+                    // } else if (index_i > index_j) {
+                    //     Hs[index].block(index_j, index_i, dim_j, dim_i).noalias() += (JtW * jacobian_j).transpose();
+                    // } else {
+                    //     Hs[index].block(index_i, index_i, dim_i, dim_i).triangularView<Eigen::Upper>() += JtW * jacobian_j;
+                    // }
+
+//                    assert(v_j->ordering_id() != -1);
+                    MatXX hessian = JtW * jacobian_j;   // TODO: 这里能继续优化, 因为J'*W*J也是对称矩阵
+                    auto h_pt = hessian.data();
+                    // 所有的信息矩阵叠加起来
+                    for (ulong c = 0; c < dim_j; ++c) {
+                        for (ulong r = 0; r < dim_i; ++r) {
+                            #pragma omp atomic
+                            H[cols * (index_j + c) + index_i + r] += *(h_pt + dim_i * c + r);
+                        }
                     }
-
-//                     MatXX hessian = JtW * jacobian_j;
-// //                    assert(hessian.rows() == v_i->local_dimension() && hessian.cols() == v_j->local_dimension());
-//                     // 所有的信息矩阵叠加起来
-//                     Hs[index].block(index_i, index_j, dim_i, dim_j).noalias() += hessian;
-//                     if (j != i) {
-//                         // 对称的下三角
-//                         Hs[index].block(index_j, index_i, dim_j, dim_i).noalias() += hessian.transpose();
-//                     }
+                    // Hs[index].block(index_i, index_j, dim_i, dim_j).noalias() += hessian;
+                    if (j != i) {
+                        // 对称的下三角
+                        for (ulong c = 0; c < dim_j; ++c) {
+                            for (ulong r = 0; r < dim_i; ++r) {
+                                #pragma omp atomic
+                                H[cols * (index_i + r) + index_j + c] += *(h_pt + dim_i * c + r);
+                            } 
+                        }
+                        // Hs[index].block(index_j, index_i, dim_j, dim_i).noalias() += hessian.transpose();
+                    }
                 }
-                bs[index].segment(index_i, dim_i).noalias() -= jacobian_i.transpose() * robust_residual;
+                VecX g = jacobian_i.transpose() * robust_residual;
+                auto g_pt = g.data();
+                for (ulong r = 0; r < dim_i; ++r) {
+                    #pragma omp atomic
+                    b[index_i + r] -= *(g_pt + r);
+                }
+                // bs[index].segment(index_i, dim_i).noalias() -= jacobian_i.transpose() * robust_residual;
             }
-        }
-
-        for (unsigned int i = 0; i < NUM_THREADS; ++i) {
-            h_state_landmark.triangularView<Eigen::Upper>() += Hs[i];
-            // h_state_landmark += Hs[i];
-            b_state_landmark += bs[i];
         }
 #else
         for (size_t n = 0; n < marginalized_edges.size(); ++n) {
@@ -164,7 +175,6 @@ namespace graph_optimization {
             }
         }
 #endif
-        h_state_landmark = h_state_landmark.selfadjointView<Eigen::Upper>();
 
         // marginalize与边连接的landmark
         MatXX h_state_schur;
@@ -230,6 +240,7 @@ namespace graph_optimization {
         }
         // h_state_schur = h_state_schur.selfadjointView<Eigen::Upper>();
 
+#ifdef DIRECT_MARGINALIZE
         // 边缘化
         ulong marg_index = vertex_pose->ordering_id();
         ulong marg_dim = vertex_pose->local_dimension() + vertex_motion->local_dimension();
@@ -240,17 +251,86 @@ namespace graph_optimization {
         MatXX h_10_hat = h_11_ldlt.solve(h_state_schur.block(marg_index, 0, marg_dim, marg_index));
         MatXX h_12_hat = h_11_ldlt.solve(h_state_schur.block(marg_index, res_index, marg_dim, res_dim));
 
-        _h_prior.block(0, 0, marg_index, marg_index).triangularView<Eigen::Upper>() = h_state_schur.block(0, 0, marg_index, marg_index) 
+        _h_prior.block(0, 0, marg_index, marg_index).triangularView<Eigen::Upper>() = h_state_schur.block(0, 0, marg_index, marg_index)
                                                                                       - h_state_schur.block(0, marg_index, marg_index, marg_dim) * h_10_hat;
-        _h_prior.block(0, marg_index, marg_index, res_dim).noalias() = h_state_schur.block(0, res_index, marg_index, res_dim) 
+        _h_prior.block(0, marg_index, marg_index, res_dim).noalias() = h_state_schur.block(0, res_index, marg_index, res_dim)
                                                                        - h_state_schur.block(0, marg_index, marg_index, marg_dim) * h_12_hat;
-        _h_prior.block(marg_index, marg_index, res_dim, res_dim).triangularView<Eigen::Upper>() = h_state_schur.block(res_index, res_index, res_dim, res_dim) 
+        _h_prior.block(marg_index, marg_index, res_dim, res_dim).triangularView<Eigen::Upper>() = h_state_schur.block(res_index, res_index, res_dim, res_dim)
                                                                                                   - h_state_schur.block(res_index, marg_index, res_dim, marg_dim) * h_12_hat;
         _h_prior = _h_prior.selfadjointView<Eigen::Upper>();
 
         _b_prior.head(marg_index) = b_state_schur.head(marg_index) - h_10_hat.transpose() * b_state_schur.segment(marg_index, marg_dim);
         _b_prior.segment(marg_index, res_dim) = b_state_schur.tail(res_dim) - h_12_hat.transpose() * b_state_schur.segment(marg_index, marg_dim);
+#else
+        /* 先移动再边缘化 */
+        // 把需要marginalize的pose和motion的vertices移动到最下面
+        ulong idx = vertex_pose->ordering_id();
+        ulong dim = vertex_pose->local_dimension() + (vertex_motion ? vertex_motion->local_dimension() : 0);
 
+        // 将 row i 移动矩阵最下面
+        Eigen::MatrixXd temp_rows = h_state_schur.block(idx, 0, dim, state_dim);
+        Eigen::MatrixXd temp_bot_rows = h_state_schur.block(idx + dim, 0, state_dim - idx - dim, state_dim);
+        h_state_schur.block(idx, 0, state_dim - idx - dim, state_dim).noalias() = temp_bot_rows;
+        h_state_schur.block(state_dim - dim, 0, dim, state_dim).noalias() = temp_rows;
+
+        // 将 col i 移动矩阵最右边
+        Eigen::MatrixXd temp_cols = h_state_schur.block(0, idx, state_dim, dim);
+        Eigen::MatrixXd temp_right_cols = h_state_schur.block(0, idx + dim, state_dim, state_dim - idx - dim);
+        h_state_schur.block(0, idx, state_dim, state_dim - idx - dim).noalias() = temp_right_cols;
+        h_state_schur.block(0, state_dim - dim, state_dim, dim).noalias() = temp_cols;
+
+        Eigen::VectorXd temp_b = b_state_schur.segment(idx, dim);
+        Eigen::VectorXd temp_b_tail = b_state_schur.segment(idx + dim, state_dim - idx - dim);
+        b_state_schur.segment(idx, state_dim - idx - dim).noalias() = temp_b_tail;
+        b_state_schur.segment(state_dim - dim, dim).noalias() = temp_b;
+
+        // marginalize与边相连的所有pose和motion顶点
+        ulong marginalized_size = dim; //vertex_pose->local_dimension() + vertex_motion->local_dimension();
+        ulong reserve_size = state_dim - marginalized_size;
+
+        // Hmm^-1 * Hrm^T
+        MatXX temp_H(MatXX::Zero(marginalized_size, reserve_size));
+
+        // Hmm^-1 * bm
+//            VecX temp_b(VecX::Zero(marginalized_size, 1));
+
+        if (marginalized_size == 1) {
+            if (h_state_schur(reserve_size, reserve_size) > 1e-12) {
+                temp_H = h_state_schur.block(reserve_size, 0, marginalized_size, reserve_size) / h_state_schur(reserve_size, reserve_size);
+//                    temp_b = bmm / h_state_schur(reserve_size, reserve_size);
+            } else {
+                temp_H.setZero();
+//                    temp_b.setZero();
+            }
+
+        } else {
+            auto &&Hmm_ldlt = h_state_schur.block(reserve_size, reserve_size, marginalized_size, marginalized_size).ldlt();
+            if (Hmm_ldlt.info() == Eigen::Success) {
+                temp_H = Hmm_ldlt.solve(h_state_schur.block(reserve_size, 0, marginalized_size, reserve_size));
+//                    temp_b = Hmm_ldlt.solve(bmm);
+            } else {
+                temp_H.setZero();
+//                    temp_b.setZero();
+            }
+        }
+
+        // (Hrr - Hrm * Hmm^-1 * Hmr) * dxp = br - Hrm * Hmm^-1 * bm
+#ifdef USE_OPENMP
+        _h_prior.topLeftCorner(reserve_size, reserve_size) = h_state_schur.topLeftCorner(reserve_size, reserve_size);
+#pragma omp parallel for num_threads(NUM_THREADS) default(none) shared(h_state_schur, temp_H, reserve_size, marginalized_size)
+        for (ulong i = 0; i < reserve_size; ++i) {
+            _h_prior(i, i) -= temp_H.col(i).dot(h_state_schur.col(i).tail(marginalized_size));
+            for (ulong j = i + 1; j < reserve_size; ++j) {
+                _h_prior(i, j) -= temp_H.col(j).dot(h_state_schur.col(i).tail(marginalized_size));
+                _h_prior(j, i) = _h_prior(i, j);
+            }
+        }
+#else
+        // (Hrr - Hrm * Hmm^-1 * Hmr) * dxp = br - Hrm * Hmm^-1 * bm
+        _h_prior.topLeftCorner(reserve_size, reserve_size) = h_state_schur.topLeftCorner(reserve_size, reserve_size) - h_state_schur.block(0, reserve_size, reserve_size, marginalized_size) * temp_H;
+#endif
+        _b_prior.head(reserve_size) = b_state_schur.head(reserve_size) - temp_H.transpose() * b_state_schur.tail(marginalized_size);
+#endif
         return true;
     }
 
@@ -802,23 +882,28 @@ namespace graph_optimization {
     }
 
     void ProblemSLAM::update_hessian() {
-        TicToc t_h;
+        TicToc t_h, t_cost;
 
         ulong size = _ordering_generic;
-        MatXX H(MatXX::Zero(size, size));       ///< Hessian矩阵
-        VecX b(VecX::Zero(size));       ///< 负梯度
-
-#ifdef USE_OPENMP
-        MatXX Hs[NUM_THREADS];       ///< Hessian矩阵
-        VecX bs[NUM_THREADS];       ///< 负梯度
-        for (unsigned int i = 0; i < NUM_THREADS; ++i) {
-            Hs[i] = MatXX::Zero(size, size);
-            bs[i] = VecX::Zero(size);
+        if (_hessian.rows() != size) {
+            _hessian = MatXX::Zero(size, size); ///< Hessian矩阵
+            _b = VecX::Zero(size);  ///< 负梯度 
+        } else {
+            _hessian.setZero();
+            _b.setZero();
         }
 
+#ifdef USE_OPENMP
+        auto H = _hessian.data();
+        auto b = _b.data();
+        // std::atomic<std::valarray> h[size];
+        // for (auto &it : h) {
+        //     h.resize(size);
+        // }
+        
         // 遍历每个残差，并计算他们的雅克比，得到最后的 H = J^T * J
 //        omp_set_num_threads(NUM_THREADS);
-#pragma omp parallel for num_threads(NUM_THREADS) default(none) shared(Hs, bs)
+#pragma omp parallel for num_threads(NUM_THREADS) default(none) shared(H, b, size)
         for (size_t n = 0; n < _reproj_edges.size(); ++n) {
             unsigned int index = omp_get_thread_num();
 
@@ -852,28 +937,47 @@ namespace graph_optimization {
                     ulong index_j = v_j->ordering_id();
                     ulong dim_j = v_j->local_dimension();
 
-                    if (index_i < index_j) {
-                        Hs[index].block(index_i, index_j, dim_i, dim_j).noalias() += JtW * jacobian_j;
-                    } else if (index_i > index_j) {
-                        Hs[index].block(index_j, index_i, dim_j, dim_i).noalias() += (JtW * jacobian_j).transpose();
-                    } else {
-                        Hs[index].block(index_i, index_i, dim_i, dim_i).triangularView<Eigen::Upper>() += JtW * jacobian_j;
-                    }
+                    // if (index_i < index_j) {
+                    //     Hs[index].block(index_i, index_j, dim_i, dim_j).noalias() += JtW * jacobian_j;
+                    // } else if (index_i > index_j) {
+                    //     Hs[index].block(index_j, index_i, dim_j, dim_i).noalias() += (JtW * jacobian_j).transpose();
+                    // } else {
+                    //     Hs[index].block(index_i, index_i, dim_i, dim_i).triangularView<Eigen::Upper>() += JtW * jacobian_j;
+                    // }
 
-// //                    assert(v_j->ordering_id() != -1);
-//                     MatXX hessian = JtW * jacobian_j;   // TODO: 这里能继续优化, 因为J'*W*J也是对称矩阵
-//                     // 所有的信息矩阵叠加起来
-//                     Hs[index].block(index_i, index_j, dim_i, dim_j).noalias() += hessian;
-//                     if (j != i) {
-//                         // 对称的下三角
-//                         Hs[index].block(index_j, index_i, dim_j, dim_i).noalias() += hessian.transpose();
-//                     }
+//                    assert(v_j->ordering_id() != -1);
+                    MatXX hessian = JtW * jacobian_j;   // TODO: 这里能继续优化, 因为J'*W*J也是对称矩阵
+                    auto h_pt = hessian.data();
+                    // 所有的信息矩阵叠加起来
+                    for (ulong c = 0; c < dim_j; ++c) {
+                        for (ulong r = 0; r < dim_i; ++r) {
+                            #pragma omp atomic
+                            H[size * (index_j + c) + index_i + r] += *(h_pt + dim_i * c + r);
+                        }
+                    }
+                    // Hs[index].block(index_i, index_j, dim_i, dim_j).noalias() += hessian;
+                    if (j != i) {
+                        // 对称的下三角
+                        for (ulong c = 0; c < dim_j; ++c) {
+                            for (ulong r = 0; r < dim_i; ++r) {
+                                #pragma omp atomic
+                                H[size * (index_i + r) + index_j + c] += *(h_pt + dim_i * c + r);
+                            } 
+                        }
+                        // Hs[index].block(index_j, index_i, dim_j, dim_i).noalias() += hessian.transpose();
+                    }
                 }
-                bs[index].segment(index_i, dim_i).noalias() -= jacobian_i.transpose() * robust_residual;
+                VecX g = jacobian_i.transpose() * robust_residual;
+                auto g_pt = g.data();
+                for (ulong r = 0; r < dim_i; ++r) {
+                    #pragma omp atomic
+                    b[index_i + r] -= *(g_pt + r);
+                }
+                // bs[index].segment(index_i, dim_i).noalias() -= jacobian_i.transpose() * robust_residual;
             }
         }
 
-#pragma omp parallel for num_threads(NUM_THREADS) default(none) shared(Hs, bs)
+#pragma omp parallel for num_threads(NUM_THREADS) default(none) shared(H, b, size)
         for (size_t n = 0; n < _imu_edges.size(); ++n) {
             unsigned int index = omp_get_thread_num();
 
@@ -907,32 +1011,44 @@ namespace graph_optimization {
                     ulong index_j = v_j->ordering_id();
                     ulong dim_j = v_j->local_dimension();
 
-                    if (index_i < index_j) {
-                        Hs[index].block(index_i, index_j, dim_i, dim_j).noalias() += JtW * jacobian_j;
-                    } else if (index_i > index_j) {
-                        Hs[index].block(index_j, index_i, dim_j, dim_i).noalias() += (JtW * jacobian_j).transpose();
-                    } else {
-                        Hs[index].block(index_i, index_i, dim_i, dim_i).triangularView<Eigen::Upper>() += JtW * jacobian_j;
+                    // if (index_i < index_j) {
+                    //     Hs[index].block(index_i, index_j, dim_i, dim_j).noalias() += JtW * jacobian_j;
+                    // } else if (index_i > index_j) {
+                    //     Hs[index].block(index_j, index_i, dim_j, dim_i).noalias() += (JtW * jacobian_j).transpose();
+                    // } else {
+                    //     Hs[index].block(index_i, index_i, dim_i, dim_i).triangularView<Eigen::Upper>() += JtW * jacobian_j;
+                    // }
+
+//                    assert(v_j->ordering_id() != -1);
+                    MatXX hessian = JtW * jacobian_j;   // TODO: 这里能继续优化, 因为J'*W*J也是对称矩阵
+                    auto h_pt = hessian.data();
+                    // 所有的信息矩阵叠加起来
+                    for (ulong c = 0; c < dim_j; ++c) {
+                        for (ulong r = 0; r < dim_i; ++r) {
+                            #pragma omp atomic
+                            H[size * (index_j + c) + index_i + r] += *(h_pt + dim_i * c + r);
+                        }
                     }
-
-// //                    assert(v_j->ordering_id() != -1);
-//                     MatXX hessian = JtW * jacobian_j;   // TODO: 这里能继续优化, 因为J'*W*J也是对称矩阵
-//                     // 所有的信息矩阵叠加起来
-//                     Hs[index].block(index_i, index_j, dim_i, dim_j).noalias() += hessian;
-//                     if (j != i) {
-//                         // 对称的下三角
-//                         Hs[index].block(index_j, index_i, dim_j, dim_i).noalias() += hessian.transpose();
-//                     }
+                    // Hs[index].block(index_i, index_j, dim_i, dim_j).noalias() += hessian;
+                    if (j != i) {
+                        // 对称的下三角
+                        for (ulong c = 0; c < dim_j; ++c) {
+                            for (ulong r = 0; r < dim_i; ++r) {
+                                #pragma omp atomic
+                                H[size * (index_i + r) + index_j + c] += *(h_pt + dim_i * c + r);
+                            } 
+                        }
+                        // Hs[index].block(index_j, index_i, dim_j, dim_i).noalias() += hessian.transpose();
+                    }
                 }
-                bs[index].segment(index_i, dim_i).noalias() -= jacobian_i.transpose() * robust_residual;
+                VecX g = jacobian_i.transpose() * robust_residual;
+                auto g_pt = g.data();
+                for (ulong r = 0; r < dim_i; ++r) {
+                    #pragma omp atomic
+                    b[index_i + r] -= *(g_pt + r);
+                }
+                // bs[index].segment(index_i, dim_i).noalias() -= jacobian_i.transpose() * robust_residual;
             }
-        }
-
-        for (unsigned int i = 0; i < NUM_THREADS; ++i) {
-            // H += Hs[i];
-            H.triangularView<Eigen::Upper>() += Hs[i];
-            b += bs[i];
-            // _t_hessian_cost += t_cost[i];
         }
 #else
         // 遍历每个残差，并计算他们的雅克比，得到最后的 H = J^T * J
@@ -966,20 +1082,17 @@ namespace graph_optimization {
                     // assert(v_j->ordering_id() != -1);
                     MatXX hessian = JtW * jacobian_j;   // TODO: 这里能继续优化, 因为J'*W*J也是对称矩阵
                     // 所有的信息矩阵叠加起来
-                    H.block(index_i, index_j, dim_i, dim_j).noalias() += hessian;
+                    _hessian.block(index_i, index_j, dim_i, dim_j).noalias() += hessian;
                     if (j != i) {
                         // 对称的下三角
-                        H.block(index_j, index_i, dim_j, dim_i).noalias() += hessian.transpose();
+                        _hessian.block(index_j, index_i, dim_j, dim_i).noalias() += hessian.transpose();
                     }
                 }
-                b.segment(index_i, dim_i).noalias() -= jacobian_i.transpose() * robust_residual;
+                _b.segment(index_i, dim_i).noalias() -= jacobian_i.transpose() * robust_residual;
             }
 
         }
 #endif
-        // _hessian = H;
-        _hessian = H.selfadjointView<Eigen::Upper>();
-        _b = b;
 
         // 叠加先验
         add_prior_to_hessian();
