@@ -646,8 +646,8 @@ void Estimator::MargOldFrame() {
     auto &vertexVB_vec = _vertex_motion_vec;
 //    auto &pose_dim = _state_dim;
 
-    problem.marginalize(vertexCams_vec[0], vertexVB_vec[0]);
-    // problem.marginalize(vertexCams_vec[0], vertexVB_vec[0], _marg_landmarks, _marg_edges);
+    // problem.marginalize(vertexCams_vec[0], vertexVB_vec[0]);
+    problem.marginalize(vertexCams_vec[0], vertexVB_vec[0], _marg_landmarks, _marg_edges);
     // problem.marginalize(vertexCams_vec[0], vertexVB_vec[0], _marg_landmarks, _marg_edges, true);
     Hprior_ = problem.get_h_prior();
     bprior_ = problem.get_b_prior();
@@ -660,8 +660,8 @@ void Estimator::MargNewFrame() {
     auto &vertexVB_vec = _vertex_motion_vec;
 //    auto &pose_dim = _state_dim;
 
-    problem.marginalize(vertexCams_vec[WINDOW_SIZE - 1], vertexVB_vec[WINDOW_SIZE - 1]);
-    // problem.marginalize(vertexCams_vec[WINDOW_SIZE - 1], vertexVB_vec[WINDOW_SIZE - 1], _marg_landmarks, _marg_edges);
+    // problem.marginalize(vertexCams_vec[WINDOW_SIZE - 1], vertexVB_vec[WINDOW_SIZE - 1]);
+    problem.marginalize(vertexCams_vec[WINDOW_SIZE - 1], vertexVB_vec[WINDOW_SIZE - 1], _marg_landmarks, _marg_edges);
     // problem.marginalize(vertexCams_vec[WINDOW_SIZE - 1], vertexVB_vec[WINDOW_SIZE - 1], _marg_landmarks, _marg_edges, false);
     Hprior_ = problem.get_h_prior();
     bprior_ = problem.get_b_prior();
@@ -697,9 +697,10 @@ void Estimator::problemSolve() {
             vertexExt->set_fixed();
         } else {
             //ROS_DEBUG("estimate extinsic param");
+            problem.add_state_vertex(vertexExt);
+            pose_dim += vertexExt->local_dimension();
         }
-        problem.add_state_vertex(vertexExt);
-        pose_dim += vertexExt->local_dimension();
+        
     }
 
     // 相机的顶点(pose和motion), WINDOW_SIZE + 1 个
@@ -801,17 +802,23 @@ void Estimator::problemSolve() {
                 // edge->set_loss_function(lossfunction);
 
                 edge_vec[i].emplace_back(edge);
-                if (imu_j == imu_marg) {
-                    marg_edges_vec[i].emplace_back(edge);
+
+                if (marginalization_flag == MARGIN_OLD) {
+                    if (imu_j == imu_marg) {
+                        marg_edges_vec[i].emplace_back(edge);
+                        marg_landmarks_vec[i].emplace_back(feature_pt->vertex_landmark);
+                    }
+                    if (imu_i == imu_marg) {
+                        marg_edges_vec[i].emplace_back(edge);
+                    }
+                }
+            }
+            if (marginalization_flag == MARGIN_OLD) {
+                if (imu_i == imu_marg) {
                     marg_landmarks_vec[i].emplace_back(feature_pt->vertex_landmark);
                 }
-                if (imu_i == imu_marg) {
-                    marg_edges_vec[i].emplace_back(edge);
-                }
             }
-            if (imu_i == imu_marg) {
-                marg_landmarks_vec[i].emplace_back(feature_pt->vertex_landmark);
-            }
+            
             // }
         }
         // std::cout << "imu_marg = " << imu_marg << std::endl;
@@ -827,14 +834,16 @@ void Estimator::problemSolve() {
                 problem.add_reproj_edge(edge);
             }
         }
-        for (auto &landmarks : marg_landmarks_vec) {
-            for (auto &landmark : landmarks) {
-                _marg_landmarks.emplace_back(landmark);
+        if (marginalization_flag == MARGIN_OLD) {
+            for (auto &landmarks : marg_landmarks_vec) {
+                for (auto &landmark : landmarks) {
+                    _marg_landmarks.emplace_back(landmark);
+                }
             }
-        }
-        for (auto &edges : marg_edges_vec) {
-            for (auto &edge : edges) {
-                _marg_edges.emplace_back(edge);
+            for (auto &edges : marg_edges_vec) {
+                for (auto &edge : edges) {
+                    _marg_edges.emplace_back(edge);
+                }
             }
         }
 #else
@@ -869,16 +878,20 @@ void Estimator::problemSolve() {
                     // edge->set_loss_function(lossfunction);
                     problem.add_reproj_edge(edge);
 
-                    if (imu_j == imu_marg) {
-                        _marg_edges.emplace_back(edge);
-                        _marg_landmarks.emplace_back(it_per_id.second.vertex_landmark);
-                    }
-                    if (imu_i == imu_marg) {
-                        _marg_edges.emplace_back(edge);
+                    if (marginalization_flag == MARGIN_OLD) {
+                        if (imu_j == imu_marg) {
+                            _marg_edges.emplace_back(edge);
+                            _marg_landmarks.emplace_back(it_per_id.second.vertex_landmark);
+                        }
+                        if (imu_i == imu_marg) {
+                            _marg_edges.emplace_back(edge);
+                        }
                     }
                 }
-                if (imu_i == imu_marg) {
-                    _marg_landmarks.emplace_back(it_per_id.second.vertex_landmark);
+                if (marginalization_flag == MARGIN_OLD) {
+                    if (imu_i == imu_marg) {
+                        _marg_landmarks.emplace_back(it_per_id.second.vertex_landmark);
+                    }
                 }
             }
         }
@@ -908,7 +921,15 @@ void Estimator::problemSolve() {
     std::cout << "t_new_problem = " << t_new_problem.toc() << std::endl;
 #endif  
 
-    problem.solve(5);
+    // 锁定最老帧
+    // vertexCams_vec[0]->set_fixed();
+    if (marginalization_flag == MARGIN_OLD) {
+        problem.solve(4);
+    } else {
+        problem.solve(5);
+    }
+    // 解锁定最老帧
+    // vertexCams_vec[0]->set_fixed(false);
     // _lambda_last = std::max(problem.get_current_lambda(), 0.);
     // std::cout << "_ordering_landmarks: " << problem._ordering_landmarks << std::endl;
 
@@ -1049,7 +1070,7 @@ void Estimator::slideWindow() {
     }
     else {
         if (frame_count == WINDOW_SIZE) {
-            double t_2nd = Headers[frame_count - 1];
+            // double t_2nd = Headers[frame_count - 1];
 
             for (unsigned int i = 0; i < dt_buf[frame_count].size(); i++) {
                 double tmp_dt = dt_buf[frame_count][i];
@@ -1082,9 +1103,9 @@ void Estimator::slideWindow() {
             angular_velocity_buf[WINDOW_SIZE].clear();
 
             // TODO: 是否应该删除次新帧？
-            map<double, ImageFrame>::iterator it_2nd;
-            it_2nd = all_image_frame.find(t_2nd);
-            all_image_frame.erase(it_2nd);
+            // map<double, ImageFrame>::iterator it_2nd;
+            // it_2nd = all_image_frame.find(t_2nd);
+            // all_image_frame.erase(it_2nd);
 
             slideWindowNew();
         }
