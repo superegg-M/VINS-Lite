@@ -683,15 +683,35 @@ namespace graph_optimization {
         // (Hpp - Hpl * Hll^-1 * Hlp) * dxp = bp - Hpl * Hll^-1 * bl
         // 这里即使叠加了lambda, 也有可能因为数值精度的问题而导致 _h_pp_schur 不可逆
 #ifdef USE_OPENMP
-        _h_pp_schur = MatXX::Zero(reserve_size, reserve_size);
-#pragma omp parallel for num_threads(NUM_THREADS) default(none) shared(temp_H, reserve_size, marg_size)
-        for (ulong i = 0; i < reserve_size; ++i) {
-            _h_pp_schur(i, i) = -temp_H.col(i).dot(_hessian.col(i).tail(marg_size));
-            for (ulong j = i + 1; j < reserve_size; ++j) {
-                _h_pp_schur(i, j) = -temp_H.col(j).dot(_hessian.col(i).tail(marg_size));
-                _h_pp_schur(j, i) = _h_pp_schur(i, j);
+        if (_h_pp_schur.rows() != reserve_size) {
+            _h_pp_schur = MatXX::Zero(reserve_size, reserve_size);
+        } else {
+            _h_pp_schur.setZero();
+        }
+        static std::vector<std::pair<ulong, ulong>> coord;
+        if (coord.size() != ((reserve_size + 1) * reserve_size) / 2) {
+            coord.clear();
+            coord.reserve(((reserve_size + 1) * reserve_size) / 2);
+            for (ulong i = 0; i < reserve_size; ++i) {
+                for (ulong j = i; j < reserve_size; ++j) {
+                    coord.emplace_back(i, j);
+                }
             }
         }
+#pragma omp parallel for num_threads(NUM_THREADS) default(none) shared(temp_H, reserve_size, marg_size, coord)
+        for (size_t n = 0; n < coord.size(); ++n) {
+                ulong i = coord[n].first;
+                ulong j = coord[n].second;
+                _h_pp_schur(i, j) = -temp_H.col(j).dot(_hessian.col(i).tail(marg_size));
+                _h_pp_schur(j, i) = _h_pp_schur(i, j);
+        }
+        // for (ulong i = 0; i < reserve_size; ++i) {
+        //     _h_pp_schur(i, i) = -temp_H.col(i).dot(_hessian.col(i).tail(marg_size));
+        //     for (ulong j = i + 1; j < reserve_size; ++j) {
+        //         _h_pp_schur(i, j) = -temp_H.col(j).dot(_hessian.col(i).tail(marg_size));
+        //         _h_pp_schur(j, i) = _h_pp_schur(i, j);
+        //     }
+        // }
         _h_pp_schur += _hessian.block(0, 0, reserve_size, reserve_size);
 #else
         // Hpp - Hpl * Hll^-1 * Hlp
