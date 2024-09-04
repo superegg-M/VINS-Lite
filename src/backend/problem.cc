@@ -53,6 +53,9 @@ namespace graph_optimization {
 
         TicToc t_solve;
 
+        _t_linear_schur_cost = 0.;
+        _t_linear_ldlt_cost = 0.;
+        _t_linear_system_cost = 0.;
         _t_hessian_cost = 0.;
         _t_jacobian_cost = 0.;
         _t_chi2_cost = 0;
@@ -78,9 +81,12 @@ namespace graph_optimization {
                 flag = calculate_levenberg_marquardt(_delta_x_lm, iterations);
                 break;
         }
-
+        _t_problem_cost = t_solve.toc();
 #ifdef PRINT_INFO
-        std::cout << "problem solve cost: " << t_solve.toc() << " ms" << std::endl;
+        std::cout << "problem solve cost: " << _t_problem_cost << " ms" << std::endl;
+        std::cout << "linear system cost: " << _t_linear_system_cost << " ms" << std::endl;
+        std::cout << "linear schur cost: " << _t_linear_schur_cost << " ms" << std::endl;
+        std::cout << "linear ldlt cost: " << _t_linear_ldlt_cost << " ms" << std::endl;
         std::cout << "update_hessian cost: " << _t_hessian_cost << " ms" << std::endl;
         std::cout << "update_jacobian cost: " << _t_jacobian_cost << " ms" << std::endl;
         std::cout << "update_chi2 cost: " << _t_chi2_cost << " ms" << std::endl;
@@ -385,6 +391,7 @@ namespace graph_optimization {
     * Solve Hx = b, we can use PCG iterative method or use sparse Cholesky
     */
     bool Problem::solve_linear_system(VecX &delta_x) {
+        TicToc t_linear_system;
         MatXX H = _hessian;
 //            for (unsigned i = 0; i < _hessian.rows(); ++i) {
 //                H(i, i) += _current_lambda;
@@ -393,6 +400,7 @@ namespace graph_optimization {
         auto && H_ldlt = H.ldlt();
         if (H_ldlt.info() == Eigen::Success) {
             delta_x = H_ldlt.solve(_b);
+            _t_linear_system_cost += t_linear_system.toc();
             return true;
         } else {
             return false;

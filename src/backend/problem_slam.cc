@@ -654,6 +654,7 @@ namespace graph_optimization {
     }
 
     bool ProblemSLAM::solve_linear_system(VecX &delta_x) {
+        TicToc t_linear_system;
         if (delta_x.rows() != _ordering_generic) {
             delta_x.resize(_ordering_generic, 1);
         }
@@ -723,6 +724,8 @@ namespace graph_optimization {
         // bp - Hpl * Hll^-1 * bl
         _b_pp_schur = _b.head(reserve_size) - temp_H.transpose() * _b.tail(marg_size);
 
+        _t_linear_schur_cost += t_linear_system.toc();
+
         // Solve: Hpp * xp = bp
 #ifdef USE_PCG_SOLVER
         auto n_pcg = _h_pp_schur.rows();                       // 迭代次数
@@ -737,6 +740,9 @@ namespace graph_optimization {
 
         // Hll * xl = bl - Hlp * xp
         delta_x.tail(marg_size) = temp_b - temp_H * delta_x.head(reserve_size);
+
+        _t_linear_ldlt_cost += t_linear_system.toc();
+        _t_linear_system_cost = _t_linear_schur_cost + _t_linear_ldlt_cost;
 
         return true;
     }
