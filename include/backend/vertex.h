@@ -14,15 +14,16 @@ namespace graph_optimization {
     public:
         /*!
          * 构造函数
+         * @param data - 顶点数据
          * @param num_dimension - 顶点自身维度
-         * @param local_dimension - 本地参数化维度, 为-1时认为与本身维度一样
+         * @param local_dimension - 本地参数化维度, 为0时认为与本身维度一样
          */
-        explicit Vertex(unsigned long num_dimension, unsigned long local_dimension=0);
+        explicit Vertex(double *data, unsigned long num_dimension, unsigned long local_dimension=0);
 
-        virtual ~Vertex() = default;
+        virtual ~Vertex();
 
         /// 返回变量维度
-        unsigned long dimension() const { return  _parameters.rows(); };
+        unsigned long dimension() const { return  _dimension; };
 
         /// 返回变量本地维度
         unsigned long local_dimension() const { return _local_dimension; };
@@ -30,23 +31,28 @@ namespace graph_optimization {
         /// 该顶点的id
         unsigned long id() const { return _id; }
 
-        const VecX &get_parameters() const { return _parameters; }
+        /// 返回参数的指针
+        const double *get_parameters() const { return _parameters; }
 
-        /// 返回参数值
-        VecX parameters() const { return _parameters; }
+        /// 返回参数的指针
+        const double *parameters() const { return _parameters; }
 
-        /// 返回参数值的引用
-        VecX &parameters() { return _parameters; }
+        /// 返回参数的指针
+        double *&parameters() { return _parameters; }
 
         /// 设置参数值
-        void set_parameters(const VecX &params) { _parameters = params; }
+        void set_parameters(const VecX &params) { std::memcpy(_parameters, params.data(), _dimension * sizeof(double)); }
+
+        /// 设置参数值
+        void set_parameters(const double *params) { std::memcpy(_parameters, params, _dimension * sizeof(double)); }
 
         void save_parameters();
         bool load_parameters();
 
         /// 加法，可重定义
         /// 默认是向量加
-        virtual void plus(const VecX &delta) { _parameters += delta; }
+        virtual void plus(const VecX &delta) = 0;
+        virtual void plus(double *delta) = 0;
 
         /// 返回顶点的名称，在子类中实现
         virtual std::string type_info() const = 0;
@@ -65,8 +71,9 @@ namespace graph_optimization {
 
     protected:
         bool saved_parameters {false};
-        VecX _parameters;   ///< 实际存储的变量值
-        VecX _parameters_backup; // 每次迭代优化中对参数进行备份，用于回退
+        double *_parameters;   ///< 实际存储的变量值
+        double *_parameters_backup; ///< 每次迭代优化中对参数进行备份，用于回退
+        unsigned long _dimension;   ///< 参数本身的维度
         unsigned long _local_dimension;   ///< 局部参数化维度
         unsigned long _id;  ///< 顶点的id，自动生成
 

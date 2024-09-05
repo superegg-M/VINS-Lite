@@ -35,23 +35,22 @@ namespace graph_optimization {
         explicit Problem();
         virtual ~Problem() = default;
 
-        virtual bool add_vertex(const std::shared_ptr<Vertex>& vertex);
-        virtual bool remove_vertex(const std::shared_ptr<Vertex>& vertex);
-        bool add_edge(const std::shared_ptr<Edge>& edge);
-        bool remove_edge(const std::shared_ptr<Edge>& edge);
+        virtual bool add_vertex(Vertex* vertex);
+        virtual bool remove_vertex(Vertex* vertex);
+        bool add_edge(Edge* edge);
+        bool remove_edge(Edge* edge);
         void extend_prior_hessian_size(ulong dim);
         bool solve(unsigned long iterations);
         virtual void clear();
 
-        unsigned long get_num_vertices() const { return _vertices.size(); }
-        unsigned long get_num_edges() const { return _edges.size(); }
-
     public:
-        std::vector<std::shared_ptr<Edge>> get_connected_edges(const std::shared_ptr<Vertex>& vertex);  ///< 获取某个顶点连接到的边
-        void get_outlier_edges(std::vector<std::shared_ptr<Edge>> &outlier_edges);  ///< 取得在优化中被判断为outlier部分的边，方便前端去除outlier
+        std::vector<std::shared_ptr<Edge>> get_connected_edges(Vertex* vertex);  ///< 获取某个顶点连接到的边
+        void get_outlier_edges(std::vector<Edge*> &outlier_edges);  ///< 取得在优化中被判断为outlier部分的边，方便前端去除outlier
         MatXX get_h_prior() const { return _h_prior; }
         VecX get_b_prior() const { return _b_prior; }
         double get_chi2() const { return _chi2; }
+        ulong get_num_vertices() const { return _vertices.size(); }
+        ulong get_num_edges() const { return _edges.size(); }
 
     public:
         void set_solver_type(SolverType type) { _solver_type = type; }
@@ -61,6 +60,8 @@ namespace graph_optimization {
     public:
         MatXX &h_prior() { return _h_prior; }
         VecX &b_prior() { return _b_prior; }
+        std::vector<Vertex*> &vertices() { return _vertices; }
+        std::vector<Edge*> &edges() { return _edges; }
 
     protected:
         virtual void initialize_ordering();    ///< 设置各顶点的ordering_index
@@ -104,10 +105,6 @@ namespace graph_optimization {
         double _t_jacobian_cost = 0.;
         double _t_hessian_cost = 0.;
         double _t_PCG_solve_cost = 0.;
-        double _t_linear_schur_cost = 0.;
-        double _t_linear_ldlt_cost = 0.;
-        double _t_linear_system_cost = 0.;
-        double _t_problem_cost = 0.;
 
         ulong _ordering_generic = 0;
         double _chi2 {0.};
@@ -127,14 +124,10 @@ namespace graph_optimization {
         MatXX _jt_prior_inv;
         VecX _err_prior;
 
-        std::vector<std::shared_ptr<Vertex>> _vertices;
-        std::vector<std::shared_ptr<Edge>> _edges;
+        std::vector<Vertex*> _vertices;
+        std::vector<Edge*> _edges;
 
-        std::unordered_multimap<unsigned long, std::shared_ptr<Edge>> _vertex_to_edge;     ///< pair(顶点id, 与该顶点相连的所有边)
-
-#ifdef USE_OPENMP
-        // constexpr static unsigned int NUM_THREADS = 8;
-#endif
+        std::unordered_multimap<unsigned long, Edge*> _vertex_to_edge;     ///< pair(顶点id, 与该顶点相连的所有边)
 
         // Gauss-Newton or Levenberg-Marquardt
         double _ni {2.};                 //控制 lambda 缩放大小

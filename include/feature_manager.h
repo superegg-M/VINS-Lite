@@ -53,7 +53,8 @@ public:
 
     bool is_outlier {false};
     bool is_margin {false};
-    double estimated_depth {-1.};
+    // double estimated_depth {-1.};
+    double inv_depth {-1.};
     int solve_flag {0}; // 0 haven't solve yet; 1 solve succ; 2 solve fail;
 
     Vector3d gt_p;

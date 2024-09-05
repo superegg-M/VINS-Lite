@@ -23,9 +23,11 @@
 #include <queue>
 #include <opencv2/core/eigen.hpp>
 
+using namespace graph_optimization;
+
 class Estimator
 {
-  public:
+    public:
     Estimator();
 
     void setParameter();
@@ -74,7 +76,7 @@ class Estimator
     VecX errprior_;
     MatXX Jprior_inv_;
 
-    Eigen::Matrix2d project_sqrt_info_;
+    Eigen::Matrix2d _project_sqrt_info;
 //////////////// OUR SOLVER //////////////////
     SolverFlag solver_flag;
     MarginalizationFlag  marginalization_flag;
@@ -162,11 +164,25 @@ class Estimator
     double _lambda_last {0.};
 
     graph_optimization::ProblemSLAM _problem;
-    vector<shared_ptr<graph_optimization::VertexPose>> _vertex_pose_vec;
-    vector<shared_ptr<graph_optimization::VertexMotion>> _vertex_motion_vec;
-    vector<shared_ptr<graph_optimization::Vertex>> _marg_landmarks;
-    vector<shared_ptr<graph_optimization::Edge>> _marg_edges;
-    unsigned int _state_dim {0};
+    std::vector<VertexPose> _vertex_ext_vec;
+    std::vector<VertexPose> _vertex_pose_vec;
+    std::vector<VertexMotion> _vertex_motion_vec;
+    std::vector<EdgeImu> _edge_imu;
+
+    std::vector<size_t> _num_landmarks;
+    std::vector<std::vector<VertexInverseDepth>> _vertex_landmarks_vec;
+
+    // std::vector<size_t> _num_edges_12;
+    std::vector<size_t> _num_edges_21;
+    // std::vector<size_t> _num_edges_22;
+    // std::vector<std::vector<EdgeReprojectionOneImuTwoCameras>> _edges_12_vec;
+    std::vector<std::vector<EdgeReprojectionTwoImuOneCameras>> _edges_21_vec;
+    // std::vector<std::vector<EdgeReprojectionTwoImuTwoCameras>> _edges_22_vec;
+
+    std::vector<std::vector<Vertex*>> _marg_landmarks_vec;
+    std::vector<std::vector<Edge*>> _marg_edges_vec;
+    std::vector<Vertex*> _marg_landmarks;
+    std::vector<Edge*> _marg_edges;
 
     double _new_problem_cost = 0.;
     double _solve_problem_cost = 0.;

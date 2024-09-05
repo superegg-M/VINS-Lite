@@ -12,32 +12,32 @@
 
 
 namespace graph_optimization {
-	using Sophus::SO3d;
+    using Sophus::SO3d;
     using namespace vins;
 
-    EdgeImu::EdgeImu(vins::IMUIntegration *imu_integration)
-    : Edge(15, 4, std::vector<std::string>{"VertexPose", "VertexMotion", "VertexPose", "VertexMotion"}),
-      _imu_integration(imu_integration) {
+    EdgeImu::EdgeImu()
+            : Edge(15, 4, std::vector<std::string>{"VertexPose", "VertexMotion", "VertexPose", "VertexMotion"}) {
 
     }
 
-	void EdgeImu::compute_residual() {
-        auto &&pose_i = _vertices[0]->get_parameters();
-        auto &&motion_i = _vertices[1]->get_parameters();
-        auto &&pose_j = _vertices[2]->get_parameters();
-        auto &&motion_j = _vertices[3]->get_parameters();
+    EdgeImu::EdgeImu(vins::IMUIntegration* imu_integration)
+            : Edge(15, 4, std::vector<std::string>{"VertexPose", "VertexMotion", "VertexPose", "VertexMotion"}),
+              _imu_integration(imu_integration) {
 
-        Vec3 p_i = pose_i.head<3>();
-        Qd q_i(pose_i[6], pose_i[3], pose_i[4], pose_i[5]);
-        Vec3 v_i = motion_i.head<3>();
-        Vec3 ba_i = motion_i.segment(3, 3);
-        Vec3 bg_i = motion_i.tail<3>();
+    }
 
-        Vec3 p_j = pose_j.head<3>();
-        Qd q_j(pose_j[6], pose_j[3], pose_j[4], pose_j[5]);
-        Vec3 v_j = motion_j.head<3>();
-        Vec3 ba_j = motion_j.segment(3, 3);
-        Vec3 bg_j = motion_j.tail<3>();
+    void EdgeImu::compute_residual() {
+        auto p_i = Eigen::Map<Eigen::Vector3d>(_vertices[0]->parameters());
+        auto q_i = Eigen::Map<Eigen::Quaterniond>(_vertices[0]->parameters() + 3);
+        auto v_i = Eigen::Map<Eigen::Vector3d>(_vertices[1]->parameters());
+        auto ba_i = Eigen::Map<Eigen::Vector3d>(_vertices[1]->parameters() + 3);
+        auto bg_i = Eigen::Map<Eigen::Vector3d>(_vertices[1]->parameters() + 6);
+
+        auto p_j = Eigen::Map<Eigen::Vector3d>(_vertices[2]->parameters());
+        auto q_j = Eigen::Map<Eigen::Quaterniond>(_vertices[2]->parameters() + 3);
+        auto v_j = Eigen::Map<Eigen::Vector3d>(_vertices[3]->parameters());
+        auto ba_j = Eigen::Map<Eigen::Vector3d>(_vertices[3]->parameters() + 3);
+        auto bg_j = Eigen::Map<Eigen::Vector3d>(_vertices[3]->parameters() + 6);
 
         Eigen::Matrix<double, 3, 3> R_i_w = q_i.inverse().toRotationMatrix();
         auto &&dt = _imu_integration->get_sum_dt();
@@ -56,22 +56,17 @@ namespace graph_optimization {
     }
 
     void EdgeImu::compute_jacobians() {
-        auto &&pose_i = _vertices[0]->get_parameters();
-        auto &&motion_i = _vertices[1]->get_parameters();
-        auto &&pose_j = _vertices[2]->get_parameters();
-        auto &&motion_j = _vertices[3]->get_parameters();
+        auto p_i = Eigen::Map<Eigen::Vector3d>(_vertices[0]->parameters());
+        auto q_i = Eigen::Map<Eigen::Quaterniond>(_vertices[0]->parameters() + 3);
+        auto v_i = Eigen::Map<Eigen::Vector3d>(_vertices[1]->parameters());
+        auto ba_i = Eigen::Map<Eigen::Vector3d>(_vertices[1]->parameters() + 3);
+        auto bg_i = Eigen::Map<Eigen::Vector3d>(_vertices[1]->parameters() + 6);
 
-        Vec3 p_i = pose_i.head<3>();
-        Qd q_i(pose_i[6], pose_i[3], pose_i[4], pose_i[5]);
-        Vec3 v_i = motion_i.head<3>();
-        Vec3 ba_i = motion_i.segment(3, 3);
-        Vec3 bg_i = motion_i.tail<3>();
-
-        Vec3 p_j = pose_j.head<3>();
-        Qd q_j(pose_j[6], pose_j[3], pose_j[4], pose_j[5]);
-        Vec3 v_j = motion_j.head<3>();
-        Vec3 ba_j = motion_j.segment(3, 3);
-        Vec3 bg_j = motion_j.tail<3>();
+        auto p_j = Eigen::Map<Eigen::Vector3d>(_vertices[2]->parameters());
+        auto q_j = Eigen::Map<Eigen::Quaterniond>(_vertices[2]->parameters() + 3);
+        auto v_j = Eigen::Map<Eigen::Vector3d>(_vertices[3]->parameters());
+//        auto ba_j = Eigen::Map<Eigen::Vector3d>(_vertices[3]->parameters() + 3);
+//        auto bg_j = Eigen::Map<Eigen::Vector3d>(_vertices[3]->parameters() + 6);
 
         Eigen::Matrix<double, 3, 3> R_i_w = q_i.inverse().toRotationMatrix();
         auto &&dt = _imu_integration->get_sum_dt();

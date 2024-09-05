@@ -13,14 +13,17 @@ namespace graph_optimization {
     class EdgeImu : public Edge {
     public:
         EIGEN_MAKE_ALIGNED_OPERATOR_NEW;
-        explicit EdgeImu(vins::IMUIntegration *imu_integration);
+        EdgeImu();
+        explicit EdgeImu(vins::IMUIntegration* imu_integration);
 
         std::string type_info() const override { return "EdgeImu"; }   ///< 返回边的类型信息
         void compute_residual() override;   ///< 计算残差
         void compute_jacobians() override;  ///< 计算雅可比
 
+        vins::IMUIntegration*& imu_integration() { return _imu_integration; }
+
     protected:
-        vins::IMUIntegration *_imu_integration;
+        vins::IMUIntegration* _imu_integration {nullptr};
         static Eigen::Matrix<double, 4, 4> get_quat_left(const Qd &q);
         static Eigen::Matrix<double, 4, 4> get_quat_right(const Qd &q);
     };

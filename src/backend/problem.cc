@@ -20,18 +20,18 @@ namespace graph_optimization {
         logout_vector_size();
     }
 
-    bool Problem::add_vertex(const std::shared_ptr<Vertex>& vertex) {
+    bool Problem::add_vertex(Vertex* vertex) {
         _vertices.emplace_back(vertex);
 
         return true;
     }
 
-    bool Problem::remove_vertex(const std::shared_ptr<Vertex>& vertex) {
+    bool Problem::remove_vertex(Vertex* vertex) {
         // TODO:
         return true;
     }
 
-    bool Problem::add_edge(const shared_ptr<Edge>& edge) {
+    bool Problem::add_edge(Edge* edge) {
         _edges.emplace_back(edge);
 
         for (auto &vertex: edge->vertices()) {
@@ -40,7 +40,7 @@ namespace graph_optimization {
         return true;
     }
 
-    bool Problem::remove_edge(const std::shared_ptr<Edge>& edge) {
+    bool Problem::remove_edge(Edge* edge) {
         // TODO:
         return true;
     }
@@ -53,9 +53,6 @@ namespace graph_optimization {
 
         TicToc t_solve;
 
-        _t_linear_schur_cost = 0.;
-        _t_linear_ldlt_cost = 0.;
-        _t_linear_system_cost = 0.;
         _t_hessian_cost = 0.;
         _t_jacobian_cost = 0.;
         _t_chi2_cost = 0;
@@ -81,12 +78,9 @@ namespace graph_optimization {
                 flag = calculate_levenberg_marquardt(_delta_x_lm, iterations);
                 break;
         }
-        _t_problem_cost = t_solve.toc();
+
 #ifdef PRINT_INFO
-        std::cout << "problem solve cost: " << _t_problem_cost << " ms" << std::endl;
-        std::cout << "linear system cost: " << _t_linear_system_cost << " ms" << std::endl;
-        std::cout << "linear schur cost: " << _t_linear_schur_cost << " ms" << std::endl;
-        std::cout << "linear ldlt cost: " << _t_linear_ldlt_cost << " ms" << std::endl;
+        std::cout << "problem solve cost: " << t_solve.toc() << " ms" << std::endl;
         std::cout << "update_hessian cost: " << _t_hessian_cost << " ms" << std::endl;
         std::cout << "update_jacobian cost: " << _t_jacobian_cost << " ms" << std::endl;
         std::cout << "update_chi2 cost: " << _t_chi2_cost << " ms" << std::endl;
@@ -100,14 +94,11 @@ namespace graph_optimization {
         // 每次重新计数
         _ordering_generic = 0;
 
-        // Note: 这里不能用多线程!!!
+        // Note: 这里不能使用多线程 !!!!!!   多线程会导致 id 分配出错
         // 统计带估计的所有变量的总维度
-// #ifdef USE_OPENMP
-// #pragma omp parallel for num_threads(NUM_THREADS) default(none)
-// #endif
-        for (size_t i = 0; i < _vertices.size(); ++i) {
-            _vertices[i]->set_ordering_id(_ordering_generic);
-            _ordering_generic += _vertices[i]->local_dimension();  // 所有的优化变量总维数
+        for (auto &vertex : _vertices) {
+            vertex->set_ordering_id(_ordering_generic);
+            _ordering_generic += vertex->local_dimension();  // 所有的优化变量总维数
         }
     }
 
@@ -117,19 +108,13 @@ namespace graph_optimization {
         ulong size = _ordering_generic;
         if (_hessian.rows() != size) {
             _hessian = MatXX::Zero(size, size); ///< Hessian矩阵
-            _b = VecX::Zero(size);  ///< 负梯度 
+            _b = VecX::Zero(size);  ///< 负梯度
         } else {
             _hessian.setZero();
             _b.setZero();
         }
 
 #ifdef USE_OPENMP
-        // MatXX Hs[NUM_THREADS];       ///< Hessian矩阵
-        // VecX bs[NUM_THREADS];       ///< 负梯度
-        // for (unsigned int i = 0; i < NUM_THREADS; ++i) {
-        //     Hs[i] = MatXX::Zero(size, size);
-        //     bs[i] = VecX::Zero(size);
-        // }
         auto H = _hessian.data();
         auto b = _b.data();
 
@@ -137,7 +122,7 @@ namespace graph_optimization {
 //        omp_set_num_threads(NUM_THREADS);
 #pragma omp parallel for num_threads(NUM_THREADS) default(none) shared(H, b, size)
         for (size_t n = 0; n < _edges.size(); ++n) {//for (auto &edge: edges) {
-            unsigned int index = omp_get_thread_num();
+//            unsigned int index = omp_get_thread_num();
 
             auto &&edge = _edges[n];
             auto &&jacobians = edge->jacobians();
@@ -183,7 +168,7 @@ namespace graph_optimization {
                     // 所有的信息矩阵叠加起来
                     for (ulong c = 0; c < dim_j; ++c) {
                         for (ulong r = 0; r < dim_i; ++r) {
-                            #pragma omp atomic
+#pragma omp atomic
                             H[size * (index_j + c) + index_i + r] += *(h_pt + dim_i * c + r);
                         }
                     }
@@ -192,9 +177,9 @@ namespace graph_optimization {
                         // 对称的下三角
                         for (ulong c = 0; c < dim_j; ++c) {
                             for (ulong r = 0; r < dim_i; ++r) {
-                                #pragma omp atomic
+#pragma omp atomic
                                 H[size * (index_i + r) + index_j + c] += *(h_pt + dim_i * c + r);
-                            } 
+                            }
                         }
                         // Hs[index].block(index_j, index_i, dim_j, dim_i).noalias() += hessian.transpose();
                     }
@@ -202,23 +187,14 @@ namespace graph_optimization {
                 VecX g = jacobian_i.transpose() * robust_residual;
                 auto g_pt = g.data();
                 for (ulong r = 0; r < dim_i; ++r) {
-                    #pragma omp atomic
+#pragma omp atomic
                     b[index_i + r] -= *(g_pt + r);
                 }
-                // bs[index].segment(index_i, dim_i).noalias() -= jacobian_i.transpose() * robust_residual;
             }
         }
-
-        // for (unsigned int i = 0; i < NUM_THREADS; ++i) {
-        //     // H += Hs[i];
-        //     _hessian.triangularView<Eigen::Upper>() += Hs[i];
-        //     _b += bs[i];
-        //     // _t_hessian_cost += t_cost[i];
-        // }
-        // _hessian = _hessian.selfadjointView<Eigen::Upper>();
 #else
         // 遍历每个残差，并计算他们的雅克比，得到最后的 H = J^T * J
-        for (auto &edge: edges) {
+        for (auto &edge: _edges) {
             auto &&jacobians = edge->jacobians();
             auto &&verticies = edge->vertices();
             // assert(jacobians.size() == verticies.size());
@@ -297,13 +273,13 @@ namespace graph_optimization {
     }
 
     void Problem::initialize_lambda() {
-        double max_diagonal = 0.;
-        ulong size = _hessian.cols();
+//        double max_diagonal = 0.;
+//        ulong size = _hessian.cols();
         // assert(_hessian.rows() == _hessian.cols() && "Hessian is not square");
         // for (ulong i = 0; i < size; ++i) {
         //     max_diagonal = std::max(fabs(_hessian(i, i)), max_diagonal);
         // }
-        max_diagonal = _hessian.diagonal().array().abs().maxCoeff();
+        double max_diagonal = _hessian.diagonal().array().abs().maxCoeff();
 
         double tau = 1e-5;  // 1e-5
         _current_lambda = tau * max_diagonal;
@@ -345,7 +321,7 @@ namespace graph_optimization {
                 norm2 += Jx.transpose() * robust_information * Jx;
             }
         }
-#else 
+#else
     for (auto &edge: _edges) {
             auto &&jacobians = edge.second->jacobians();
             auto &&verticies = edge.second->vertices();
@@ -364,7 +340,7 @@ namespace graph_optimization {
                 ulong index_i = v_i->ordering_id();
                 ulong dim_i = v_i->local_dimension();
 
-                
+
 
                 VecX Jx = jacobian_i * x.segment(index_i, dim_i);
                 norm2 += Jx.transpose() * robust_information * Jx;
@@ -391,7 +367,6 @@ namespace graph_optimization {
     * Solve Hx = b, we can use PCG iterative method or use sparse Cholesky
     */
     bool Problem::solve_linear_system(VecX &delta_x) {
-        TicToc t_linear_system;
         MatXX H = _hessian;
 //            for (unsigned i = 0; i < _hessian.rows(); ++i) {
 //                H(i, i) += _current_lambda;
@@ -400,7 +375,6 @@ namespace graph_optimization {
         auto && H_ldlt = H.ldlt();
         if (H_ldlt.info() == Eigen::Success) {
             delta_x = H_ldlt.solve(_b);
-            _t_linear_system_cost += t_linear_system.toc();
             return true;
         } else {
             return false;
@@ -423,6 +397,17 @@ namespace graph_optimization {
 
         // 利用 delta_x 更新先验信息
         update_prior(delta_x);
+    }
+
+    void Problem::rollback_states(const VecX &delta_x) {
+#ifdef USE_OPENMP
+#pragma omp parallel for num_threads(NUM_THREADS) default(none)
+#endif
+        for (size_t n = 0; n < _vertices.size(); ++n) {
+            auto &&vertex = _vertices[n];
+            vertex->load_parameters();
+        }
+        _b_prior = _b_prior_bp;
     }
 
     void Problem::update_prior(const VecX &delta_x) {
@@ -472,17 +457,6 @@ namespace graph_optimization {
         _chi2 *= 0.5;
 
         _t_chi2_cost += t_c.toc();
-    }
-
-    void Problem::rollback_states(const VecX &delta_x) {
-#ifdef USE_OPENMP
-#pragma omp parallel for num_threads(NUM_THREADS) default(none)
-#endif
-        for (size_t n = 0; n < _vertices.size(); ++n) {
-            auto &&vertex = _vertices[n];
-            vertex->load_parameters();
-        }
-        _b_prior = _b_prior_bp;
     }
 
     void Problem::save_hessian_diagonal_elements() {
@@ -572,7 +546,7 @@ namespace graph_optimization {
         return true;
     }
 
-    std::vector<std::shared_ptr<Edge>> Problem::get_connected_edges(const std::shared_ptr<Vertex>& vertex) {
+    std::vector<std::shared_ptr<Edge>> Problem::get_connected_edges(Vertex* vertex) {
         vector<shared_ptr<Edge>> edges;
         auto range = _vertex_to_edge.equal_range(vertex->id());
         for (auto iter = range.first; iter != range.second; ++iter) {

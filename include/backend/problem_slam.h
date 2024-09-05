@@ -13,20 +13,19 @@ namespace graph_optimization {
         ProblemSLAM() = default;
         void clear() override;
 
-        bool add_state_vertex(const std::shared_ptr<Vertex>& vertex);
-        bool add_landmark_vertex(const std::shared_ptr<Vertex>& vertex);
-        bool add_reproj_edge(const std::shared_ptr<Edge> &edge);
-        bool add_imu_edge(const std::shared_ptr<Edge> &edge);
+        bool add_state_vertex(Vertex* vertex);
+        bool add_landmark_vertex(Vertex* vertex);
+        bool add_reproj_edge(Edge *edge);
+        bool add_imu_edge(Edge *edge);
 
-        bool marginalize(const std::shared_ptr<Vertex>& vertex_pose, const std::shared_ptr<Vertex>& vertex_motion); ///< 边缘化pose和与之相关的edge
-        bool marginalize(const std::shared_ptr<Vertex>& vertex_pose, 
-                         const std::shared_ptr<Vertex>& vertex_motion,
-                         const std::vector<std::shared_ptr<Vertex>> &vertices_landmark,
-                         const std::vector<std::shared_ptr<Edge>> &edges);
+        bool marginalize(Vertex* vertex_pose,
+                         Vertex* vertex_motion,
+                         const std::vector<Vertex*> &vertices_landmark,
+                         const std::vector<Edge*> &edges);
 
     public:
-        static bool is_pose_vertex(const std::shared_ptr<Vertex>& v);   ///< 判断一个顶点是否为Pose顶点
-        static bool is_landmark_vertex(const std::shared_ptr<Vertex>& v);   ///< 判断一个顶点是否为landmark顶点
+        static bool is_pose_vertex(Vertex* v);   ///< 判断一个顶点是否为Pose顶点
+        static bool is_landmark_vertex(Vertex* v);   ///< 判断一个顶点是否为landmark顶点
 
     protected:
         void initialize_ordering() override;
@@ -40,10 +39,10 @@ namespace graph_optimization {
     public:
         ulong _ordering_poses = 0;
         ulong _ordering_landmarks = 0;
-        std::vector<std::shared_ptr<Vertex>> _pose_vertices;
-        std::vector<std::shared_ptr<Vertex>> _landmark_vertices;
-        std::vector<std::shared_ptr<Edge>> _reproj_edges;
-        std::vector<std::shared_ptr<Edge>> _imu_edges;
+        std::vector<Vertex*> _pose_vertices;
+        std::vector<Vertex*> _landmark_vertices;
+        std::vector<Edge*> _reproj_edges;
+        std::vector<Edge*> _imu_edges;
 
         // 使用schur补求解线性方程组时的过程量
         MatXX _h_pp_schur;

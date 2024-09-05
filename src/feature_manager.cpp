@@ -136,9 +136,9 @@ void FeatureManager::set_depth(const VectorXd &x) {
     unsigned int feature_index = 0;
     for (auto &it_per_id : features_map) {
         if (it_per_id.second.is_suitable_to_reprojection()) {
-            it_per_id.second.estimated_depth = 1.0 / x(feature_index++);
-            //ROS_INFO("feature id %d , start_frame_id %d, depth %f ", it_per_id->feature_id, it_per_id-> start_frame_id, it_per_id->estimated_depth);
-            if (it_per_id.second.estimated_depth < 0) {
+            it_per_id.second.inv_depth = x(feature_index++);
+            //ROS_INFO("feature id %d , start_frame_id %d, depth %f ", it_per_id->feature_id, it_per_id-> start_frame_id, 1. / it_per_id->inv_depth);
+            if (it_per_id.second.inv_depth < 0) {
                 it_per_id.second.solve_flag = 2;
             }
             else {
@@ -164,7 +164,7 @@ void FeatureManager::clear_depth(const VectorXd &x) {
     unsigned int feature_index = 0;
     for (auto &it_per_id : features_map) {
         if (it_per_id.second.is_suitable_to_reprojection()) {
-            it_per_id.second.estimated_depth = 1.0 / x(feature_index++);
+            it_per_id.second.inv_depth = x(feature_index++);
         }
     }
 }
@@ -174,11 +174,7 @@ VectorXd FeatureManager::get_depth_vector() {
     unsigned int feature_index = 0;
     for (auto &it_per_id : features_map) {
         if (it_per_id.second.is_suitable_to_reprojection()) {
-#if 1
-            dep_vec(feature_index++) = 1. / it_per_id.second.estimated_depth;
-#else
-            dep_vec(++feature_index) = it_per_id->estimated_depth;
-#endif
+            dep_vec(feature_index++) = it_per_id.second.inv_depth;
         }
     }
     return dep_vec;
@@ -187,7 +183,7 @@ VectorXd FeatureManager::get_depth_vector() {
 void FeatureManager::triangulate(Vector3d p_imu[], Vector3d t_ic[], Matrix3d r_ic[]) {
     for (auto &it_per_id : features_map) {
         if (it_per_id.second.is_suitable_to_reprojection()) {
-            if (it_per_id.second.estimated_depth > 0.)
+            if (it_per_id.second.inv_depth > 0.)
                 continue;
 
             unsigned int imu_i = it_per_id.second.start_frame_id;
@@ -225,11 +221,10 @@ void FeatureManager::triangulate(Vector3d p_imu[], Vector3d t_ic[], Matrix3d r_i
 
             Eigen::Vector4d svd_V = Eigen::JacobiSVD<Eigen::MatrixXd>(svd_A, Eigen::ComputeThinV).matrixV().rightCols<1>();
             double depth = svd_V[2] / svd_V[3];
-            it_per_id.second.estimated_depth = depth;
-
-            if (it_per_id.second.estimated_depth < 0.1) {
-                it_per_id.second.estimated_depth = INIT_DEPTH;
+            if (depth < 0.1) {
+                depth = INIT_DEPTH;
             }
+            it_per_id.second.inv_depth = 1. / depth;
         }
     }
 }
@@ -278,14 +273,14 @@ void FeatureManager::remove_back_shift_depth(const Eigen::Matrix3d &marg_R, cons
                 continue;
             }
             // 以新的start_frame计算feature的深度
-            Eigen::Vector3d p_feature_c = uv_i * feature.second->estimated_depth;
+            Eigen::Vector3d p_feature_c = uv_i / feature.second->inv_depth;
             Eigen::Vector3d p_feature_w = marg_R * p_feature_c + marg_P;
             Eigen::Vector3d p_feature_c_new = new_R.transpose() * (p_feature_w - new_P);
             double depth_new = p_feature_c_new[2];
             if (depth_new > 0) {
-                feature.second->estimated_depth = depth_new;
+                feature.second->inv_depth = 1. /depth_new;
             } else {
-                feature.second->estimated_depth = INIT_DEPTH;
+                feature.second->inv_depth = 1. / INIT_DEPTH;
             }
         }
         // remove tracking-lost feature after marginalize
@@ -317,14 +312,14 @@ void FeatureManager::remove_back_shift_depth(const Eigen::Matrix3d &marg_R, cons
                 continue;
             }
             // 以新的start_frame计算feature的深度
-            Eigen::Vector3d p_feature_c = uv_i * feature.second.estimated_depth;
+            Eigen::Vector3d p_feature_c = uv_i / feature.second.inv_depth;
             Eigen::Vector3d p_feature_w = marg_R * p_feature_c + marg_P;
             Eigen::Vector3d p_feature_c_new = new_R.transpose() * (p_feature_w - new_P);
             double depth_new = p_feature_c_new[2];
             if (depth_new > 0) {
-                feature.second.estimated_depth = depth_new;
+                feature.second.inv_depth = 1. / depth_new;
             } else {
-                feature.second.estimated_depth = INIT_DEPTH;
+                feature.second.inv_depth = 1. / INIT_DEPTH;
             }
         }
         // remove tracking-lost feature after marginalize

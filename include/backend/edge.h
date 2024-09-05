@@ -36,7 +36,7 @@ namespace graph_optimization {
          * 设置一个顶点
          * @param vertex 对应的vertex对象
          */
-        bool add_vertex(const std::shared_ptr<Vertex>& vertex) {
+        bool add_vertex(Vertex* vertex) {
             _vertices.emplace_back(vertex);
             return true;
         }
@@ -46,12 +46,12 @@ namespace graph_optimization {
          * @param vertices 顶点，按引用顺序排列
          * @return
          */
-        bool set_vertices(const std::vector<std::shared_ptr<Vertex>> &vertices) {
+        bool set_vertices(std::vector<Vertex*> &vertices) {
             _vertices = vertices;
             return true;
         }
 
-        bool set_vertex(const std::shared_ptr<Vertex> &vertex, unsigned long which_vertex) {
+        bool set_vertex(Vertex* vertex, unsigned long which_vertex) {
             if (which_vertex < _vertices.size()) {
                 _vertices[which_vertex] = vertex;
                 return true;
@@ -62,10 +62,10 @@ namespace graph_optimization {
         void set_loss_function(const std::shared_ptr<LossFunction> &loss_function) { _loss_function = loss_function; }
 
         /// 返回第i个顶点
-        std::shared_ptr<Vertex> get_vertex(unsigned long i) { return _vertices[i]; }
+        Vertex* get_vertex(unsigned long i) { return _vertices[i]; }
 
         /// 返回所有顶点
-        const std::vector<std::shared_ptr<Vertex>> &vertices() const { return _vertices; }
+        std::vector<Vertex*> &vertices() { return _vertices; }
 
         /// 返回关联顶点个数
         size_t num_vertices() const { return _vertices.size(); }
@@ -101,10 +101,10 @@ namespace graph_optimization {
         const MatXX &information() const { return _information; }
 
         /// 鲁棒信息矩阵
-        const MatXX &get_robust_info() const { return _robust_info; }   
+        const MatXX &get_robust_info() const { return _robust_info; }
 
         /// 鲁棒残差
-        const VecX &get_robust_res() const { return _robust_res; }               
+        const VecX &get_robust_res() const { return _robust_res; }
 
         void robust_information(double &drho, MatXX &info, VecX &res) const;
 
@@ -128,7 +128,7 @@ namespace graph_optimization {
         unsigned long _id;  ///< edge id
 //        unsigned long _ordering_id;   ///< edge id in problem
         std::vector<std::string> _vertices_types;  ///< 各顶点类型信息，用于debug
-        std::vector<std::shared_ptr<Vertex>> _vertices; ///< 该边对应的顶点
+        std::vector<Vertex*> _vertices; ///< 该边对应的顶点
         VecX _residual;                 ///< 残差
         std::vector<MatXX> _jacobians;  ///< 雅可比，每个顶点对应一个雅可比, 每个雅可比得维度是 residual x vertex.local_dimension
         double _chi2 {0};               ///< e^2
@@ -145,3 +145,4 @@ namespace graph_optimization {
 }
 
 #endif //GRAPH_OPTIMIZATION_EDGE_H
+

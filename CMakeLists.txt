@@ -71,6 +71,9 @@ ADD_LIBRARY(MyVio SHARED
     src/backend/dog_leg.cc
     src/backend/problem_slam.cc
     src/backend/vertex_pose.cc
+    src/backend/vertex_motion.cc
+    src/backend/vertex_inverse_depth.cc
+    src/backend/vertex_point3d.cc
     src/backend/edge_reprojection.cc
     src/backend/edge_imu.cc
     src/backend/edge_prior.cpp
@@ -79,7 +82,7 @@ ADD_LIBRARY(MyVio SHARED
     )
 
 target_compile_definitions(MyVio PRIVATE -DNUM_THREADS=4)    
-target_compile_definitions(MyVio PRIVATE -DPRINT_INFO)
+# target_compile_definitions(MyVio PRIVATE -DPRINT_INFO)
 target_compile_definitions(MyVio PRIVATE -DDISPLAY_TRAJ)
 
 target_link_libraries(MyVio  

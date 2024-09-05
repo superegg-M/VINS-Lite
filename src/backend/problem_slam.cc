@@ -24,10 +24,10 @@ namespace graph_optimization {
     * vertex排序必须满足: extra, pose[0], motion[0], pose[1], motion[1], ..., pose[WINDOWS_SIZE], motion[WINDOWS_SIZE]
     * 若不满足, 则需要外部调整_H_prior和_b_prior的顺序, 以适应vertex的排序
     * */
-    bool ProblemSLAM::marginalize(const std::shared_ptr<Vertex>& vertex_pose, 
-                                  const std::shared_ptr<Vertex>& vertex_motion,
-                                  const std::vector<std::shared_ptr<Vertex>> &marginalized_landmarks,
-                                  const std::vector<std::shared_ptr<Edge>> &marginalized_edges) {
+    bool ProblemSLAM::marginalize(Vertex* vertex_pose,
+                                  Vertex* vertex_motion,
+                                  const std::vector<Vertex*> &marginalized_landmarks,
+                                  const std::vector<Edge*> &marginalized_edges) {
         // 重新计算一篇ordering
         // initialize_ordering();
         ulong state_dim = _ordering_poses;
@@ -48,11 +48,11 @@ namespace graph_optimization {
         auto b = b_state_landmark.data();   ///< 负梯度
 #pragma omp parallel for num_threads(NUM_THREADS) default(none) shared(marginalized_edges, H, b, cols)
         for (size_t n = 0; n < marginalized_edges.size(); ++n) {
-            unsigned int index = omp_get_thread_num();
+//            unsigned int index = omp_get_thread_num();
 
             auto &edge = marginalized_edges[n];
             auto &&jacobians = edge->jacobians();
-            auto &&verticies = edge->vertices();
+            auto &&vertices = edge->vertices();
             // assert(jacobians.size() == vertices.size());
 
             // 计算edge的鲁棒权重
@@ -63,9 +63,9 @@ namespace graph_optimization {
             auto &&robust_information = edge->get_robust_info();
             auto &&robust_residual = edge->get_robust_res();
 
-            for (size_t i = 0; i < verticies.size(); ++i) {
-                auto &&v_i = verticies[i];
-                if (v_i->is_fixed()) continue;    // Hessian 里不需要添加它的信息，也就是它的雅克比为 0
+            for (size_t i = 0; i < vertices.size(); ++i) {
+                auto &&v_i = vertices[i];
+                if (v_i->is_fixed()) continue;
 
                 auto &&jacobian_i = jacobians[i];
                 if (jacobian_i.rows() == 0) continue;
@@ -74,8 +74,8 @@ namespace graph_optimization {
                 ulong dim_i = v_i->local_dimension();
 
                 MatXX JtW = jacobian_i.transpose() * robust_information.selfadjointView<Eigen::Upper>();
-                for (size_t j = i; j < verticies.size(); ++j) {
-                    auto &&v_j = verticies[j];
+                for (size_t j = i; j < vertices.size(); ++j) {
+                    auto &&v_j = vertices[j];
                     if (v_j->is_fixed()) continue;
 
                     auto &&jacobian_j = jacobians[j];
@@ -84,43 +84,31 @@ namespace graph_optimization {
                     ulong index_j = v_j->ordering_id();
                     ulong dim_j = v_j->local_dimension();
 
-                    // if (index_i < index_j) {
-                    //     Hs[index].block(index_i, index_j, dim_i, dim_j).noalias() += JtW * jacobian_j;
-                    // } else if (index_i > index_j) {
-                    //     Hs[index].block(index_j, index_i, dim_j, dim_i).noalias() += (JtW * jacobian_j).transpose();
-                    // } else {
-                    //     Hs[index].block(index_i, index_i, dim_i, dim_i).triangularView<Eigen::Upper>() += JtW * jacobian_j;
-                    // }
-
-//                    assert(v_j->ordering_id() != -1);
                     MatXX hessian = JtW * jacobian_j;   // TODO: 这里能继续优化, 因为J'*W*J也是对称矩阵
                     auto h_pt = hessian.data();
                     // 所有的信息矩阵叠加起来
                     for (ulong c = 0; c < dim_j; ++c) {
                         for (ulong r = 0; r < dim_i; ++r) {
-                            #pragma omp atomic
+#pragma omp atomic
                             H[cols * (index_j + c) + index_i + r] += *(h_pt + dim_i * c + r);
                         }
                     }
-                    // Hs[index].block(index_i, index_j, dim_i, dim_j).noalias() += hessian;
                     if (j != i) {
                         // 对称的下三角
                         for (ulong c = 0; c < dim_j; ++c) {
                             for (ulong r = 0; r < dim_i; ++r) {
-                                #pragma omp atomic
+#pragma omp atomic
                                 H[cols * (index_i + r) + index_j + c] += *(h_pt + dim_i * c + r);
-                            } 
+                            }
                         }
-                        // Hs[index].block(index_j, index_i, dim_j, dim_i).noalias() += hessian.transpose();
                     }
                 }
                 VecX g = jacobian_i.transpose() * robust_residual;
                 auto g_pt = g.data();
                 for (ulong r = 0; r < dim_i; ++r) {
-                    #pragma omp atomic
+#pragma omp atomic
                     b[index_i + r] -= *(g_pt + r);
                 }
-                // bs[index].segment(index_i, dim_i).noalias() -= jacobian_i.transpose() * robust_residual;
             }
         }
 #else
@@ -135,11 +123,13 @@ namespace graph_optimization {
             // assert(jacobians.size() == vertices.size());
 
             // 计算edge的鲁棒权重
-            double drho;
-            MatXX robust_information;
-            VecX robust_residual;
-            edge->robust_information(drho, robust_information, robust_residual);
-
+//            double drho;
+//            MatXX robust_information;
+//            VecX robust_residual;
+//            edge->robust_information(drho, robust_information, robust_residual);
+//            edge->compute_robust();
+            auto &&robust_information = edge->get_robust_info();
+            auto &&robust_residual = edge->get_robust_res();
             for (size_t i = 0; i < vertices.size(); ++i) {
                 auto &&v_i = vertices[i];
                 if (v_i->is_fixed()) continue;
@@ -334,310 +324,6 @@ namespace graph_optimization {
         return true;
     }
 
-
-
-    /*
-    * marginalize 所有和 frame 相连的 edge: imu factor, projection factor
-    * */
-    bool ProblemSLAM::marginalize(const std::shared_ptr<Vertex>& vertex_pose, const std::shared_ptr<Vertex>& vertex_motion) {
-        // 重新计算一篇ordering
-        // initialize_ordering();
-        ulong state_dim = _ordering_poses;
-
-        // 所需被marginalize的edge
-        auto &&marginalized_edges = get_connected_edges(vertex_pose);
-
-        // 所需被marginalize的landmark
-        ulong marginalized_landmark_size = 0;
-        std::unordered_map<unsigned long, shared_ptr<Vertex>> marginalized_landmark;  // O(1)查找
-        for (auto &edge : marginalized_edges) {
-            auto vertices_edge = edge->vertices();
-            for (auto &vertex : vertices_edge) {
-                if (is_landmark_vertex(vertex)
-                    && marginalized_landmark.find(vertex->id()) == marginalized_landmark.end()) {
-                    // 修改landmark的ordering_id, 方便hessian的计算
-                    vertex->set_ordering_id(state_dim + marginalized_landmark_size);
-                    marginalized_landmark.insert(make_pair(vertex->id(), vertex));
-                    marginalized_landmark_size += vertex->local_dimension();
-                }
-            }
-        }
-
-// #ifdef USE_OPENMP
-//         std::vector<std::pair<unsigned long, shared_ptr<Vertex>>> marginalized_landmark_vector;
-//         marginalized_landmark_vector.reserve(marginalized_landmark.size());
-//         for (auto &landmark : marginalized_landmark) {
-//             marginalized_landmark_vector.emplace_back(landmark);
-//         }
-// #endif
-
-        // 计算所需marginalize的edge的hessian
-        ulong cols = state_dim + marginalized_landmark_size;
-        MatXX h_state_landmark = VecX::Constant(cols, 1, 1e-6).asDiagonal();
-        VecX b_state_landmark(VecX::Zero(cols));
-
-#ifdef USE_OPENMP
-        MatXX Hs[NUM_THREADS];       ///< Hessian矩阵
-        VecX bs[NUM_THREADS];       ///< 负梯度
-        for (unsigned int i = 0; i < NUM_THREADS; ++i) {
-            Hs[i] = MatXX::Zero(cols, cols);
-            bs[i] = VecX::Zero(cols);
-        }
-
-#pragma omp parallel for num_threads(NUM_THREADS) default(none) shared(marginalized_edges, Hs, bs)
-        for (size_t n = 0; n < marginalized_edges.size(); ++n) {
-            unsigned int index = omp_get_thread_num();
-
-            auto &edge = marginalized_edges[n];
-            auto &&jacobians = edge->jacobians();
-            auto &&vertices = edge->vertices();
-            // assert(jacobians.size() == vertices.size());
-
-            // 计算edge的鲁棒权重
-            // double drho;
-            // MatXX robust_information;
-            // VecX robust_residual;
-            // edge->robust_information(drho, robust_information, robust_residual);
-            auto &&robust_information = edge->get_robust_info();
-            auto &&robust_residual = edge->get_robust_res();
-
-            for (size_t i = 0; i < vertices.size(); ++i) {
-                auto &&v_i = vertices[i];
-                if (v_i->is_fixed()) continue;
-
-                auto &&jacobian_i = jacobians[i];
-                if (jacobian_i.rows() == 0) continue;
-
-                ulong index_i = v_i->ordering_id();
-                ulong dim_i = v_i->local_dimension();
-
-                MatXX JtW = jacobian_i.transpose() * robust_information;
-                for (size_t j = i; j < vertices.size(); ++j) {
-                    auto &&v_j = vertices[j];
-                    if (v_j->is_fixed()) continue;
-
-                    auto &&jacobian_j = jacobians[j];
-                    if (jacobian_j.rows() == 0) continue;
-
-                    ulong index_j = v_j->ordering_id();
-                    ulong dim_j = v_j->local_dimension();
-
-                    MatXX hessian = JtW * jacobian_j;
-
-//                    assert(hessian.rows() == v_i->local_dimension() && hessian.cols() == v_j->local_dimension());
-                    // 所有的信息矩阵叠加起来
-                    Hs[index].block(index_i, index_j, dim_i, dim_j).noalias() += hessian;
-                    if (j != i) {
-                        // 对称的下三角
-                        Hs[index].block(index_j, index_i, dim_j, dim_i).noalias() += hessian.transpose();
-                    }
-                }
-                bs[index].segment(index_i, dim_i).noalias() -= jacobian_i.transpose() * robust_residual;
-            }
-        }
-
-        for (unsigned int i = 0; i < NUM_THREADS; ++i) {
-            h_state_landmark += Hs[i];
-            b_state_landmark += bs[i];
-        }
-#else
-        for (size_t n = 0; n < marginalized_edges.size(); ++n) {
-            auto &edge = marginalized_edges[n];
-            // 若曾经solve problem, 则无需再次计算
-            // edge->compute_residual();
-            // edge->compute_jacobians();
-            auto &&jacobians = edge->jacobians();
-            auto &&vertices = edge->vertices();
-
-            // assert(jacobians.size() == vertices.size());
-
-            // 计算edge的鲁棒权重
-            // double drho;
-            // MatXX robust_information;
-            // VecX robust_residual;
-            // edge->robust_information(drho, robust_information, robust_residual);
-            auto &&robust_information = edge->get_robust_info();
-            auto &&robust_residual = edge->get_robust_res();
-
-            for (size_t i = 0; i < vertices.size(); ++i) {
-                auto &&v_i = vertices[i];
-                if (v_i->is_fixed()) continue;
-
-                auto &&jacobian_i = jacobians[i];
-                if (jacobian_i.rows() == 0) continue;
-
-                ulong index_i = v_i->ordering_id();
-                ulong dim_i = v_i->local_dimension();
-
-                MatXX JtW = jacobian_i.transpose() * robust_information;
-                for (size_t j = i; j < vertices.size(); ++j) {
-                    auto &&v_j = vertices[j];
-                    if (v_j->is_fixed()) continue;
-
-                    auto &&jacobian_j = jacobians[j];
-                    if (jacobian_j.rows() == 0) continue;
-
-                    ulong index_j = v_j->ordering_id();
-                    ulong dim_j = v_j->local_dimension();
-
-                    MatXX hessian = JtW * jacobian_j;
-
-                    // assert(hessian.rows() == v_i->local_dimension() && hessian.cols() == v_j->local_dimension());
-                    // 所有的信息矩阵叠加起来
-                    h_state_landmark.block(index_i, index_j, dim_i, dim_j) += hessian;
-                    if (j != i) {
-                        // 对称的下三角
-                        h_state_landmark.block(index_j, index_i, dim_j, dim_i) += hessian.transpose();
-                    }
-                }
-                b_state_landmark.segment(index_i, dim_i) -= jacobian_i.transpose() * robust_residual;
-            }
-        }
-#endif
-
-
-        // marginalize与边连接的landmark
-        MatXX h_state_schur;
-        VecX b_state_schur;
-        if (marginalized_landmark_size > 0) {
-            // Hll
-            VecX Hll = h_state_landmark.block(state_dim, state_dim, marginalized_landmark_size, marginalized_landmark_size).diagonal();
-            // 由于叠加了eps, 所以能够保证Hll可逆
-            VecX Hll_inv = Hll.array().inverse();
-
-            // Hll^-1 * Hsl^T
-            MatXX temp_H = Hll_inv.asDiagonal() * h_state_landmark.block(state_dim, 0, marginalized_landmark_size, state_dim);
-            // Hll^-1 * bl
-//            VecX temp_b = Hll_inv.cwiseProduct(b_state_landmark.tail(marginalized_landmark_size));
-
-            // (Hss - Hsl * Hll^-1 * Hlp) * dxp = bp - Hsl * Hll^-1 * bl
-#ifdef USE_OPENMP
-            h_state_schur = MatXX::Zero(state_dim, state_dim);
-#pragma omp parallel for num_threads(NUM_THREADS) default(none) shared(h_state_landmark, h_state_schur, temp_H, state_dim, marginalized_landmark_size)
-            for (ulong i = 0; i < state_dim; ++i) {
-                h_state_schur(i, i) = -temp_H.col(i).dot(h_state_landmark.col(i).tail(marginalized_landmark_size));
-                for (ulong j = i + 1; j < state_dim; ++j) {
-                    h_state_schur(i, j) = -temp_H.col(j).dot(h_state_landmark.col(i).tail(marginalized_landmark_size));
-                    h_state_schur(j, i) = h_state_schur(i, j);
-                }
-            }
-            h_state_schur += h_state_landmark.block(0, 0, state_dim, state_dim);
-#else
-            h_state_schur = h_state_landmark.block(0, 0, state_dim, state_dim) - h_state_landmark.block(0, state_dim, state_dim, marginalized_landmark_size) * temp_H;
-#endif
-            b_state_schur = b_state_landmark.head(state_dim) - temp_H.transpose() * b_state_landmark.tail(marginalized_landmark_size);
-        } else {
-            h_state_schur = h_state_landmark;
-            b_state_schur = b_state_landmark;
-        }
-
-        // 叠加之前的先验
-        if(_h_prior.rows() > 0) {
-            h_state_schur += _h_prior;
-            b_state_schur += _b_prior;
-        } else {
-            _h_prior = MatXX::Zero(state_dim, state_dim);
-            _b_prior = VecX::Zero(state_dim, 1);
-        }
-
-        // 把需要marginalize的pose和motion的vertices移动到最下面
-        ulong marginalized_state_dim = 0;
-        auto move_vertex_to_bottom = [&](const std::shared_ptr<Vertex>& vertex) {
-            ulong idx = vertex->ordering_id();
-            ulong dim = vertex->local_dimension();
-            marginalized_state_dim += dim;
-
-            if (idx + dim == state_dim) {
-                return;
-            }
-
-            // 将 row i 移动矩阵最下面
-            Eigen::MatrixXd temp_rows = h_state_schur.block(idx, 0, dim, state_dim);
-            Eigen::MatrixXd temp_bot_rows = h_state_schur.block(idx + dim, 0, state_dim - idx - dim, state_dim);
-            h_state_schur.block(idx, 0, state_dim - idx - dim, state_dim).noalias() = temp_bot_rows;
-            h_state_schur.block(state_dim - dim, 0, dim, state_dim).noalias() = temp_rows;
-
-            // 将 col i 移动矩阵最右边
-            Eigen::MatrixXd temp_cols = h_state_schur.block(0, idx, state_dim, dim);
-            Eigen::MatrixXd temp_right_cols = h_state_schur.block(0, idx + dim, state_dim, state_dim - idx - dim);
-            h_state_schur.block(0, idx, state_dim, state_dim - idx - dim).noalias() = temp_right_cols;
-            h_state_schur.block(0, state_dim - dim, state_dim, dim).noalias() = temp_cols;
-
-            Eigen::VectorXd temp_b = b_state_schur.segment(idx, dim);
-            Eigen::VectorXd temp_b_tail = b_state_schur.segment(idx + dim, state_dim - idx - dim);
-            b_state_schur.segment(idx, state_dim - idx - dim).noalias() = temp_b_tail;
-            b_state_schur.segment(state_dim - dim, dim).noalias() = temp_b;
-        };
-        if (vertex_motion) {
-            move_vertex_to_bottom(vertex_motion);
-        }
-        move_vertex_to_bottom(vertex_pose);
-
-        // marginalize与边相连的所有pose和motion顶点
-        auto marginalize_bottom_vertex = [&](const std::shared_ptr<Vertex> &vertex) {
-            ulong marginalized_size = vertex->local_dimension();
-            ulong reserve_size = state_dim - marginalized_size;
-
-            // Hmm^-1 * Hrm^T
-            MatXX temp_H(MatXX::Zero(marginalized_size, reserve_size));
-
-            // Hmm^-1 * bm
-//            VecX temp_b(VecX::Zero(marginalized_size, 1));
-
-            ulong size = vertex->local_dimension();
-            if (size == 1) {
-                if (h_state_schur(reserve_size, reserve_size) > 1e-12) {
-                    temp_H = h_state_schur.block(reserve_size, 0, marginalized_size, reserve_size) / h_state_schur(reserve_size, reserve_size);
-//                    temp_b = bmm / h_state_schur(reserve_size, reserve_size);
-                } else {
-                    temp_H.setZero();
-//                    temp_b.setZero();
-                }
-                
-            } else {
-                auto &&Hmm_ldlt = h_state_schur.block(reserve_size, reserve_size, marginalized_size, marginalized_size).ldlt();
-                if (Hmm_ldlt.info() == Eigen::Success) {
-                    temp_H = Hmm_ldlt.solve(h_state_schur.block(reserve_size, 0, marginalized_size, reserve_size));
-//                    temp_b = Hmm_ldlt.solve(bmm);
-                } else {
-                    temp_H.setZero();
-//                    temp_b.setZero();
-                }
-            }
-
-            // (Hrr - Hrm * Hmm^-1 * Hmr) * dxp = br - Hrm * Hmm^-1 * bm
-#ifdef USE_OPENMP
-            MatXX h_state_schur_bp = h_state_schur;
-            h_state_schur = MatXX::Zero(reserve_size, reserve_size);
-#pragma omp parallel for num_threads(NUM_THREADS) default(none) shared(h_state_schur, h_state_schur_bp, temp_H, reserve_size, marginalized_size)
-            for (ulong i = 0; i < reserve_size; ++i) {
-                h_state_schur(i, i) = -temp_H.col(i).dot(h_state_schur_bp.col(i).tail(marginalized_size));
-                for (ulong j = i + 1; j < reserve_size; ++j) {
-                    h_state_schur(i, j) = -temp_H.col(j).dot(h_state_schur_bp.col(i).tail(marginalized_size));
-                    h_state_schur(j, i) = h_state_schur(i, j);
-                }
-            }
-            h_state_schur += h_state_schur_bp.block(0, 0, reserve_size, reserve_size);
-#else
-
-            // (Hrr - Hrm * Hmm^-1 * Hmr) * dxp = br - Hrm * Hmm^-1 * bm
-            h_state_schur = h_state_schur.block(0, 0, reserve_size, reserve_size) - h_state_schur.block(0, reserve_size, reserve_size, marginalized_size) * temp_H;
-#endif
-            b_state_schur = b_state_schur.head(reserve_size) - temp_H.transpose() * b_state_schur.tail(marginalized_size);
-
-            state_dim = reserve_size;
-        };
-        marginalize_bottom_vertex(vertex_pose);
-        if (vertex_motion) {
-            marginalize_bottom_vertex(vertex_motion);
-        }
-
-        _h_prior.topLeftCorner(state_dim, state_dim) = h_state_schur;
-        _b_prior.topRows(state_dim) = b_state_schur;
-
-        return true;
-    }
-
     VecX ProblemSLAM::multiply_hessian(const VecX &x) {
         VecX v(VecX::Zero(x.rows(), x.cols()));
         for (unsigned long i = 0; i < _ordering_poses; i++) {
@@ -654,7 +340,6 @@ namespace graph_optimization {
     }
 
     bool ProblemSLAM::solve_linear_system(VecX &delta_x) {
-        TicToc t_linear_system;
         if (delta_x.rows() != _ordering_generic) {
             delta_x.resize(_ordering_generic, 1);
         }
@@ -677,9 +362,9 @@ namespace graph_optimization {
         VecX Hll_inv = Hll.array().inverse();
 
         // Hll^-1 * Hpl^T
-        MatXX temp_H = Hll_inv.asDiagonal() * _hessian.block(reserve_size, 0, marg_size, reserve_size);  
+        MatXX temp_H = Hll_inv.asDiagonal() * _hessian.block(reserve_size, 0, marg_size, reserve_size);
         // Hll^-1 * bl
-        VecX temp_b = Hll_inv.cwiseProduct(_b.tail(marg_size));   
+        VecX temp_b = Hll_inv.cwiseProduct(_b.tail(marg_size));
 
         // (Hpp - Hpl * Hll^-1 * Hlp) * dxp = bp - Hpl * Hll^-1 * bl
         // 这里即使叠加了lambda, 也有可能因为数值精度的问题而导致 _h_pp_schur 不可逆
@@ -701,10 +386,10 @@ namespace graph_optimization {
         }
 #pragma omp parallel for num_threads(NUM_THREADS) default(none) shared(temp_H, reserve_size, marg_size, coord)
         for (size_t n = 0; n < coord.size(); ++n) {
-                ulong i = coord[n].first;
-                ulong j = coord[n].second;
-                _h_pp_schur(i, j) = -temp_H.col(j).dot(_hessian.col(i).tail(marg_size));
-                _h_pp_schur(j, i) = _h_pp_schur(i, j);
+            ulong i = coord[n].first;
+            ulong j = coord[n].second;
+            _h_pp_schur(i, j) = -temp_H.col(j).dot(_hessian.col(i).tail(marg_size));
+            _h_pp_schur(j, i) = _h_pp_schur(i, j);
         }
         // for (ulong i = 0; i < reserve_size; ++i) {
         //     _h_pp_schur(i, i) = -temp_H.col(i).dot(_hessian.col(i).tail(marg_size));
@@ -724,9 +409,6 @@ namespace graph_optimization {
         // bp - Hpl * Hll^-1 * bl
         _b_pp_schur = _b.head(reserve_size) - temp_H.transpose() * _b.tail(marg_size);
 
-        _t_linear_schur_cost += t_linear_system.toc();
-        t_linear_system.tic();
-
         // Solve: Hpp * xp = bp
 #ifdef USE_PCG_SOLVER
         auto n_pcg = _h_pp_schur.rows();                       // 迭代次数
@@ -741,9 +423,6 @@ namespace graph_optimization {
 
         // Hll * xl = bl - Hlp * xp
         delta_x.tail(marg_size) = temp_b - temp_H * delta_x.head(reserve_size);
-
-        _t_linear_ldlt_cost += t_linear_system.toc();
-        _t_linear_system_cost = _t_linear_schur_cost + _t_linear_ldlt_cost;
 
         return true;
     }
@@ -794,8 +473,6 @@ namespace graph_optimization {
     }
 
     void ProblemSLAM::initialize_ordering() {
-        // std::cout << "new: " << _ordering_poses << ", " << _ordering_landmarks << std::endl;
-
         // _ordering_generic = 0;
 
         // // 分配pose的维度
@@ -823,12 +500,9 @@ namespace graph_optimization {
         // }
 
         _ordering_generic = _ordering_poses + _ordering_landmarks;
-
-
-        // std::cout << "old: " << _ordering_poses << ", " << _ordering_landmarks << std::endl;
     }
 
-    bool ProblemSLAM::add_state_vertex(const std::shared_ptr<Vertex>& vertex) {
+    bool ProblemSLAM::add_state_vertex(Vertex* vertex) {
         if (Problem::add_vertex(vertex)) {
             vertex->set_ordering_id(_ordering_poses);
             _ordering_poses += vertex->local_dimension();
@@ -838,7 +512,7 @@ namespace graph_optimization {
         return false;
     }
 
-    bool ProblemSLAM::add_landmark_vertex(const std::shared_ptr<Vertex>& vertex) {
+    bool ProblemSLAM::add_landmark_vertex(Vertex* vertex) {
         if (Problem::add_vertex(vertex)) {
             vertex->set_ordering_id(_ordering_landmarks + _ordering_poses);
             _ordering_landmarks += vertex->local_dimension();
@@ -848,12 +522,12 @@ namespace graph_optimization {
         return false;
     }
 
-    bool ProblemSLAM::is_pose_vertex(const std::shared_ptr<Vertex>& v) {
+    bool ProblemSLAM::is_pose_vertex(Vertex* v) {
         string type = v->type_info();
         return type == string("VertexPose") || type == string("VertexMotion");
     }
 
-    bool ProblemSLAM::is_landmark_vertex(const std::shared_ptr<Vertex>& v) {
+    bool ProblemSLAM::is_landmark_vertex(Vertex* v) {
         string type = v->type_info();
         return type == string("VertexPointXYZ") || type == string("VertexInverseDepth");
     }
@@ -884,55 +558,57 @@ namespace graph_optimization {
         return true;
     }
 
-    bool ProblemSLAM::add_reproj_edge(const std::shared_ptr<Edge> &edge) {
-        _edges.emplace_back(edge);
-        _reproj_edges.emplace_back(edge);
-        return true;
-        
-        // if (Problem::add_edge(edge)) {
-        //     _reproj_edges.emplace_back(edge);
-        //     return true;
-        // }
-        // return false;
+    bool ProblemSLAM::add_reproj_edge(Edge* edge) {
+         _edges.emplace_back(edge);
+         _reproj_edges.emplace_back(edge);
+         return true;
+
+//        if (Problem::add_edge(edge)) {
+//            _reproj_edges.emplace_back(edge);
+//            return true;
+//        }
+//        return false;
     }
 
-    bool ProblemSLAM::add_imu_edge(const std::shared_ptr<Edge> &edge) {
-        _edges.emplace_back(edge);
-        _imu_edges.emplace_back(edge);
-        return true;
+    bool ProblemSLAM::add_imu_edge(Edge* edge) {
+         _edges.emplace_back(edge);
+         _imu_edges.emplace_back(edge);
+         return true;
 
-        // if (Problem::add_edge(edge)) {
-        //     _imu_edges.emplace_back(edge);
-        //     return true;
-        // }
-        // return false;
+//        if (Problem::add_edge(edge)) {
+//            _imu_edges.emplace_back(edge);
+//            return true;
+//        }
+//        return false;
     }
 
     void ProblemSLAM::update_hessian() {
-        TicToc t_h, t_cost;
+        TicToc t_h;
 
         ulong size = _ordering_generic;
         if (_hessian.rows() != size) {
             _hessian = MatXX::Zero(size, size); ///< Hessian矩阵
-            _b = VecX::Zero(size);  ///< 负梯度 
+            _b = VecX::Zero(size);  ///< 负梯度
         } else {
             _hessian.setZero();
             _b.setZero();
         }
 
 #ifdef USE_OPENMP
+//        MatXX Hs[NUM_THREADS];       ///< Hessian矩阵
+//        VecX bs[NUM_THREADS];       ///< 负梯度
+//        for (unsigned int i = 0; i < NUM_THREADS; ++i) {
+//            Hs[i] = MatXX::Zero(size, size);
+//            bs[i] = VecX::Zero(size);
+//        }
         auto H = _hessian.data();
         auto b = _b.data();
-        // std::atomic<std::valarray> h[size];
-        // for (auto &it : h) {
-        //     h.resize(size);
-        // }
-        
+
         // 遍历每个残差，并计算他们的雅克比，得到最后的 H = J^T * J
 //        omp_set_num_threads(NUM_THREADS);
 #pragma omp parallel for num_threads(NUM_THREADS) default(none) shared(H, b, size)
         for (size_t n = 0; n < _reproj_edges.size(); ++n) {
-            unsigned int index = omp_get_thread_num();
+//            unsigned int index = omp_get_thread_num();
 
             auto &&edge = _reproj_edges[n];
             auto &&jacobians = edge->jacobians();
@@ -978,7 +654,7 @@ namespace graph_optimization {
                     // 所有的信息矩阵叠加起来
                     for (ulong c = 0; c < dim_j; ++c) {
                         for (ulong r = 0; r < dim_i; ++r) {
-                            #pragma omp atomic
+#pragma omp atomic
                             H[size * (index_j + c) + index_i + r] += *(h_pt + dim_i * c + r);
                         }
                     }
@@ -987,9 +663,9 @@ namespace graph_optimization {
                         // 对称的下三角
                         for (ulong c = 0; c < dim_j; ++c) {
                             for (ulong r = 0; r < dim_i; ++r) {
-                                #pragma omp atomic
+#pragma omp atomic
                                 H[size * (index_i + r) + index_j + c] += *(h_pt + dim_i * c + r);
-                            } 
+                            }
                         }
                         // Hs[index].block(index_j, index_i, dim_j, dim_i).noalias() += hessian.transpose();
                     }
@@ -997,7 +673,7 @@ namespace graph_optimization {
                 VecX g = jacobian_i.transpose() * robust_residual;
                 auto g_pt = g.data();
                 for (ulong r = 0; r < dim_i; ++r) {
-                    #pragma omp atomic
+#pragma omp atomic
                     b[index_i + r] -= *(g_pt + r);
                 }
                 // bs[index].segment(index_i, dim_i).noalias() -= jacobian_i.transpose() * robust_residual;
@@ -1006,7 +682,7 @@ namespace graph_optimization {
 
 #pragma omp parallel for num_threads(NUM_THREADS) default(none) shared(H, b, size)
         for (size_t n = 0; n < _imu_edges.size(); ++n) {
-            unsigned int index = omp_get_thread_num();
+//            unsigned int index = omp_get_thread_num();
 
             auto &&edge = _imu_edges[n];
             auto &&jacobians = edge->jacobians();
@@ -1052,7 +728,7 @@ namespace graph_optimization {
                     // 所有的信息矩阵叠加起来
                     for (ulong c = 0; c < dim_j; ++c) {
                         for (ulong r = 0; r < dim_i; ++r) {
-                            #pragma omp atomic
+#pragma omp atomic
                             H[size * (index_j + c) + index_i + r] += *(h_pt + dim_i * c + r);
                         }
                     }
@@ -1061,9 +737,9 @@ namespace graph_optimization {
                         // 对称的下三角
                         for (ulong c = 0; c < dim_j; ++c) {
                             for (ulong r = 0; r < dim_i; ++r) {
-                                #pragma omp atomic
+#pragma omp atomic
                                 H[size * (index_i + r) + index_j + c] += *(h_pt + dim_i * c + r);
-                            } 
+                            }
                         }
                         // Hs[index].block(index_j, index_i, dim_j, dim_i).noalias() += hessian.transpose();
                     }
@@ -1071,24 +747,34 @@ namespace graph_optimization {
                 VecX g = jacobian_i.transpose() * robust_residual;
                 auto g_pt = g.data();
                 for (ulong r = 0; r < dim_i; ++r) {
-                    #pragma omp atomic
+#pragma omp atomic
                     b[index_i + r] -= *(g_pt + r);
                 }
                 // bs[index].segment(index_i, dim_i).noalias() -= jacobian_i.transpose() * robust_residual;
             }
         }
+
+//        for (unsigned int i = 0; i < NUM_THREADS; ++i) {
+//            // H += Hs[i];
+//            H.triangularView<Eigen::Upper>() += Hs[i];
+//            b += bs[i];
+//            // _t_hessian_cost += t_cost[i];
+//        }
 #else
         // 遍历每个残差，并计算他们的雅克比，得到最后的 H = J^T * J
-        for (auto &edge: edges) {
+        for (auto &edge: _edges) {
             auto &&jacobians = edge->jacobians();
             auto &&verticies = edge->vertices();
             // assert(jacobians.size() == verticies.size());
 
             // 计算edge的鲁棒权重
-            double drho;
-            MatXX robust_information;
-            VecX robust_residual;
-            edge.second->robust_information(drho, robust_information, robust_residual);
+//            double drho;
+//            MatXX robust_information;
+//            VecX robust_residual;
+//            edge->robust_information(drho, robust_information, robust_residual);
+            edge->compute_robust();
+            auto &&robust_information = edge->get_robust_info();
+            auto &&robust_residual = edge->get_robust_res();
             for (size_t i = 0; i < verticies.size(); ++i) {
                 auto &&v_i = verticies[i];
                 if (v_i->is_fixed()) continue;    // Hessian 里不需要添加它的信息，也就是它的雅克比为 0
@@ -1120,6 +806,9 @@ namespace graph_optimization {
 
         }
 #endif
+//        // _hessian = H;
+//        _hessian = H.selfadjointView<Eigen::Upper>();
+//        _b = b;
 
         // 叠加先验
         add_prior_to_hessian();
