@@ -131,6 +131,7 @@ void Estimator::processIMU(double dt, const Vector3d &linear_acceleration, const
 
 // TODO: 在运行processImage时向_problem加入vertex和edge, 而不在problemSolve中加
 void Estimator::processImage(const map<int, vector<pair<int, Eigen::Matrix<double, 7, 1>>>> &image, double header) {
+    TicToc tic_toc;
     //ROS_DEBUG("new image coming ------------------------------------------");
     // cout << "Adding feature points: " << image.size()<<endl;
     // 若视差大于阈值, 则认为image为关键帧。但无论是否为key frame, 都会把这次观测到的frame关联到landmark上
@@ -179,6 +180,9 @@ void Estimator::processImage(const map<int, vector<pair<int, Eigen::Matrix<doubl
     f_manager.update_features_vector();
 #endif
 
+    _image_to_feature_cost = tic_toc.toc();
+    tic_toc.tic();
+
     if (solver_flag == INITIAL) {
         if (frame_count == WINDOW_SIZE) {
             bool result = false;
@@ -217,7 +221,6 @@ void Estimator::processImage(const map<int, vector<pair<int, Eigen::Matrix<doubl
             return;
         }
 
-        TicToc t_margin;
         slideWindow();
         f_manager.remove_failures();
         //ROS_DEBUG("marginalization costs: %fms", t_margin.toc());
@@ -231,6 +234,22 @@ void Estimator::processImage(const map<int, vector<pair<int, Eigen::Matrix<doubl
         last_R0 = Rs[0];
         last_P0 = Ps[0];
     }
+
+    _backend_cost = tic_toc.toc();
+    _process_image_cost = _image_to_feature_cost + _backend_cost;
+
+#ifdef PRINT_INFO
+    std::cout << "new_problem_cost: " << _new_problem_cost << " ms" << std::endl;
+    std::cout << "solve_problem_cost: " << _solve_problem_cost << " ms" << std::endl;
+    std::cout << "marginalize_cost: " << _marginalize_cost << " ms" << std::endl;
+    std::cout << "optimization_cost: " << _optimization_cost << " ms" << std::endl;
+    std::cout << "sliding_window_cost: " << _sliding_window_cost << " ms" << std::endl;
+    std::cout << "image_to_feature_cost: " << _image_to_feature_cost << " ms" << std::endl;
+    std::cout << "backend_cost: " << _backend_cost << " ms" << std::endl;
+    std::cout << "process_image_cost: " << _process_image_cost << " ms" << std::endl;
+    std::cout << "num of vertices: " << _problem.get_num_vertices() << std::endl;
+    std::cout << "num of edges: " << _problem.get_num_edges() << std::endl;
+#endif
 }
 bool Estimator::initialStructure() {
     TicToc t_sfm;
@@ -638,6 +657,8 @@ bool Estimator::failureDetection() {
 }
 
 void Estimator::MargOldFrame() {
+    TicToc tic_toc;
+
     // backend::LossFunction *lossfunction;
     // lossfunction = new backend::CauchyLoss(1.0);
 
@@ -653,8 +674,12 @@ void Estimator::MargOldFrame() {
     bprior_ = problem.get_b_prior();
     // errprior_ = problem.get_err_prior();
     // Jprior_inv_ = problem.get_Jt_prior();
+
+    _marginalize_cost = tic_toc.toc();
 }
 void Estimator::MargNewFrame() {
+    TicToc tic_toc;
+
     auto &problem = _problem;
     auto &vertexCams_vec = _vertex_pose_vec;
     auto &vertexVB_vec = _vertex_motion_vec;
@@ -667,9 +692,11 @@ void Estimator::MargNewFrame() {
     bprior_ = problem.get_b_prior();
     // errprior_ = problem.get_err_prior();
     // Jprior_inv_ = problem.get_Jt_prior();
+
+    _marginalize_cost = tic_toc.toc();
 }
 void Estimator::problemSolve() {
-    TicToc t_new_problem;
+    TicToc tic_toc;
 
     // _problem = graph_optimization::ProblemSLAM();
     _problem.clear();
@@ -916,10 +943,8 @@ void Estimator::problemSolve() {
             problem.set_b_prior(bprior_);
         }
     }
-
-#ifdef PRINT_INFO  
-    std::cout << "t_new_problem = " << t_new_problem.toc() << std::endl;
-#endif  
+    _new_problem_cost = tic_toc.toc();
+    tic_toc.tic();
 
     // 锁定最老帧
     // vertexCams_vec[0]->set_fixed();
@@ -928,6 +953,8 @@ void Estimator::problemSolve() {
     } else {
         problem.solve(5);
     }
+    _solve_problem_cost = tic_toc.toc();
+    tic_toc.tic();
     // 解锁定最老帧
     // vertexCams_vec[0]->set_fixed(false);
     // _lambda_last = std::max(problem.get_current_lambda(), 0.);
@@ -981,7 +1008,7 @@ void Estimator::problemSolve() {
 }
 
 void Estimator::backendOptimization() {
-    TicToc t_solver;
+    TicToc tic_toc;
     // 借助 vins 框架，维护变量
     vector2double();
     // 构建求解器
@@ -991,7 +1018,6 @@ void Estimator::backendOptimization() {
     //ROS_INFO("whole time for solver: %f", t_solver.toc());
 
     // 维护 marg
-    TicToc t_whole_marginalization;
     if (marginalization_flag == MARGIN_OLD) {
         vector2double();
 
@@ -1004,14 +1030,13 @@ void Estimator::backendOptimization() {
             MargNewFrame();
         }
     }
-#ifdef PRINT_INFO    
-    std::cout << "t_whole_marginalization = " << t_whole_marginalization.toc() << std::endl;
-#endif    
+
+    _optimization_cost = tic_toc.toc();
 }
 
 
 void Estimator::slideWindow() {
-    TicToc t_margin;
+    TicToc tic_toc;
 
     if (marginalization_flag == MARGIN_OLD) {
         double t_0 = Headers[0];
@@ -1110,9 +1135,7 @@ void Estimator::slideWindow() {
             slideWindowNew();
         }
     }
-#ifdef PRINT_INFO
-    std::cout << "t_margin = " << t_margin.toc() << std::endl;
-#endif    
+    _sliding_window_cost = tic_toc.toc();
 }
 
 // real marginalization is removed in solve_ceres()

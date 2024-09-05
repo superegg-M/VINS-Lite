@@ -167,4 +167,13 @@ class Estimator
     vector<shared_ptr<graph_optimization::Vertex>> _marg_landmarks;
     vector<shared_ptr<graph_optimization::Edge>> _marg_edges;
     unsigned int _state_dim {0};
+
+    double _new_problem_cost = 0.;
+    double _solve_problem_cost = 0.;
+    double _marginalize_cost = 0.;
+    double _optimization_cost = 0.;
+    double _sliding_window_cost = 0.;
+    double _image_to_feature_cost = 0.;
+    double _backend_cost = 0.;
+    double _process_image_cost = 0.;
 };

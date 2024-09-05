@@ -43,6 +43,9 @@ namespace graph_optimization {
         bool solve(unsigned long iterations);
         virtual void clear();
 
+        unsigned long get_num_vertices() const { return _vertices.size(); }
+        unsigned long get_num_edges() const { return _edges.size(); }
+
     public:
         std::vector<std::shared_ptr<Edge>> get_connected_edges(const std::shared_ptr<Vertex>& vertex);  ///< 获取某个顶点连接到的边
         void get_outlier_edges(std::vector<std::shared_ptr<Edge>> &outlier_edges);  ///< 取得在优化中被判断为outlier部分的边，方便前端去除outlier
