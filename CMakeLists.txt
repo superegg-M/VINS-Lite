@@ -83,7 +83,7 @@ ADD_LIBRARY(MyVio SHARED
 
 target_compile_definitions(MyVio PRIVATE -DNUM_THREADS=4)    
 # target_compile_definitions(MyVio PRIVATE -DPRINT_INFO)
-target_compile_definitions(MyVio PRIVATE -DDISPLAY_TRAJ)
+# target_compile_definitions(MyVio PRIVATE -DDISPLAY_TRAJ)
 
 target_link_libraries(MyVio  
   ${OpenCV_LIBS}  
@@ -97,7 +97,7 @@ target_link_libraries(run_euroc
   MyVio  
   -lpthread
   OpenMP::OpenMP_CXX) 
-target_compile_definitions(run_euroc PRIVATE -DDISPLAY_TRAJ)
+# target_compile_definitions(run_euroc PRIVATE -DDISPLAY_TRAJ)
 
 add_executable(testCurveFitting test/CurveFitting.cpp)
 target_link_libraries(testCurveFitting MyVio)
