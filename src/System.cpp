@@ -94,7 +94,7 @@ void System::PubImageData(double dStampSec, Mat &img)
     TicToc t_r;
     // cout << "3 PubImageData t : " << dStampSec << endl;
     trackerData[0].readImage(img, dStampSec);
-    // std::cout << "0 Frontend trackerData dt: " << t_r.toc() << std::endl;
+    std::cout << "0 Frontend trackerData dt: " << t_r.toc() << std::endl;
 
     for (unsigned int i = 0;; i++)
     {
