@@ -1,0 +1,1 @@
+add_subdirectory(vins_stereo)

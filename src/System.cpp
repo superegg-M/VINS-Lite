@@ -17,7 +17,9 @@ System::System(string sConfig_file_)
 
     trackerData[0].readIntrinsicParameter(sConfig_file);
 
-    estimator.setParameter();
+    for (int i = 0; i < NUM_OF_CAM; i++) {
+        estimator.set_ext_param(i, TIC[i], Qd(RIC[i]))
+    }
     ofs_pose.open("./pose_output.txt",fstream::app | fstream::out);
     if(!ofs_pose.is_open())
     {
@@ -42,7 +44,7 @@ System::~System()
     m_buf.unlock();
 
     m_estimator.lock();
-    estimator.clearState();
+    // estimator.clearState();
     m_estimator.unlock();
 
     ofs_pose.close();
@@ -186,7 +188,7 @@ vector<pair<vector<ImuConstPtr>, ImgConstPtr>> System::getMeasurements()
             return measurements;
         }
 
-        if (!(imu_buf.back()->header > feature_buf.front()->header + estimator.td))
+        if (!(imu_buf.back()->header > feature_buf.front()->header + estimator.get_td()))
         {
             cerr << "wait for imu, only should happen at the beginning sum_of_wait: " 
                 << sum_of_wait << endl;
@@ -194,7 +196,7 @@ vector<pair<vector<ImuConstPtr>, ImgConstPtr>> System::getMeasurements()
             return measurements;
         }
 
-        if (!(imu_buf.front()->header < feature_buf.front()->header + estimator.td))
+        if (!(imu_buf.front()->header < feature_buf.front()->header + estimator.get_td()))
         {
             cerr << "throw img, only should happen at the beginning" << endl;
             feature_buf.pop();
@@ -204,7 +206,7 @@ vector<pair<vector<ImuConstPtr>, ImgConstPtr>> System::getMeasurements()
         feature_buf.pop();
 
         vector<ImuConstPtr> IMUs;
-        while (imu_buf.front()->header < img_msg->header + estimator.td)
+        while (imu_buf.front()->header < img_msg->header + estimator.get_td())
         {
             IMUs.emplace_back(imu_buf.front());
             imu_buf.pop();
@@ -276,7 +278,7 @@ void System::ProcessBackEnd()
             for (auto &imu_msg : measurement.first)
             {
                 double t = imu_msg->header;
-                double img_t = img_msg->header + estimator.td;
+                double img_t = img_msg->header + estimator.get_td();
                 if (t <= img_t)
                 {
                     if (current_time < 0)
@@ -290,7 +292,7 @@ void System::ProcessBackEnd()
                     rx = imu_msg->angular_velocity.x();
                     ry = imu_msg->angular_velocity.y();
                     rz = imu_msg->angular_velocity.z();
-                    estimator.processIMU(dt, Vector3d(dx, dy, dz), Vector3d(rx, ry, rz));
+                    estimator.process_imu(dt, Vector3d(dx, dy, dz), Vector3d(rx, ry, rz));
                     // printf("1 BackEnd imu: dt:%f a: %f %f %f w: %f %f %f\n",dt, dx, dy, dz, rx, ry, rz);
                 }
                 else
@@ -309,7 +311,7 @@ void System::ProcessBackEnd()
                     rx = w1 * rx + w2 * imu_msg->angular_velocity.x();
                     ry = w1 * ry + w2 * imu_msg->angular_velocity.y();
                     rz = w1 * rz + w2 * imu_msg->angular_velocity.z();
-                    estimator.processIMU(dt_1, Vector3d(dx, dy, dz), Vector3d(rx, ry, rz));
+                    estimator.process_imu(dt_1, Vector3d(dx, dy, dz), Vector3d(rx, ry, rz));
                     //printf("dimu: dt:%f a: %f %f %f w: %f %f %f\n",dt_1, dx, dy, dz, rx, ry, rz);
                 }
             }
@@ -318,44 +320,67 @@ void System::ProcessBackEnd()
             //     << " img_msg->points.size: "<< img_msg->points.size() << endl;
 
             // TicToc t_s;
-            map<int, vector<pair<int, Eigen::Matrix<double, 7, 1>>>> image;
-            for (unsigned int i = 0; i < img_msg->points.size(); i++) 
-            {
+            // map<int, vector<pair<int, Eigen::Matrix<double, 7, 1>>>> image;
+            // for (unsigned int i = 0; i < img_msg->points.size(); i++) 
+            // {
+            //     int v = img_msg->id_of_point[i] + 0.5;
+            //     int feature_id = v / NUM_OF_CAM;
+            //     int camera_id = v % NUM_OF_CAM;
+            //     double x = img_msg->points[i].x();
+            //     double y = img_msg->points[i].y();
+            //     double z = img_msg->points[i].z();
+            //     double p_u = img_msg->u_of_point[i];
+            //     double p_v = img_msg->v_of_point[i];
+            //     double velocity_x = img_msg->velocity_x_of_point[i];
+            //     double velocity_y = img_msg->velocity_y_of_point[i];
+            //     assert(z == 1);
+            //     Eigen::Matrix<double, 7, 1> xyz_uv_velocity;
+            //     xyz_uv_velocity << x, y, z, p_u, p_v, velocity_x, velocity_y;
+            //     image[feature_id].emplace_back(camera_id, xyz_uv_velocity);
+            // }
+            // 替换为vector, 方便processImage中进行多线程操作
+            std::vector<std::pair<int, vector<pair<int, Eigen::Matrix<double, 7, 1>>>>> image;
+            image.resize(img_msg->points.size() / NUM_OF_CAM);
+            for (unsigned int i = 0; i < img_msg->points.size(); i += NUM_OF_CAM) {
+                unsigned int index = i / NUM_OF_CAM;
                 int v = img_msg->id_of_point[i] + 0.5;
-                int feature_id = v / NUM_OF_CAM;
-                int camera_id = v % NUM_OF_CAM;
-                double x = img_msg->points[i].x();
-                double y = img_msg->points[i].y();
-                double z = img_msg->points[i].z();
-                double p_u = img_msg->u_of_point[i];
-                double p_v = img_msg->v_of_point[i];
-                double velocity_x = img_msg->velocity_x_of_point[i];
-                double velocity_y = img_msg->velocity_y_of_point[i];
-                assert(z == 1);
-                Eigen::Matrix<double, 7, 1> xyz_uv_velocity;
-                xyz_uv_velocity << x, y, z, p_u, p_v, velocity_x, velocity_y;
-                image[feature_id].emplace_back(camera_id, xyz_uv_velocity);
+                int feature_id = v;
+                image[index].first = feature_id;
+                for (unsigned int j = i; j < i + NUM_OF_CAM; ++j) {
+                    int camera_id = j - i;
+                    double x = img_msg->points[j].x();
+                    double y = img_msg->points[j].y();
+                    double z = img_msg->points[j].z();
+                    double p_u = img_msg->u_of_point[j];
+                    double p_v = img_msg->v_of_point[j];
+                    double velocity_x = img_msg->velocity_x_of_point[j];
+                    double velocity_y = img_msg->velocity_y_of_point[j];
+                    assert(z == 1);
+                    Eigen::Matrix<double, 7, 1> xyz_uv_velocity;
+                    xyz_uv_velocity << x, y, z, p_u, p_v, velocity_x, velocity_y;
+                    image[index].second.emplace_back(camera_id, xyz_uv_velocity);
+                }
             }
             TicToc t_processImage;
-            estimator.processImage(image, img_msg->header);
+            estimator.processImage(image, img_msg->header*1e6);
             static double dt_mean = 0.;
             static double n = 1.;
             static double dt_average = 0.;
             static unsigned int nn = 1;
-            if (estimator.solver_flag == Estimator::SolverFlag::NON_LINEAR)
+            if (estimator.solver_flag == Estimator::SolverFlag::OPTIMIZATION)
             {
                 Vector3d p_wi;
                 Quaterniond q_wi;
-                q_wi = Quaterniond(estimator.Rs[WINDOW_SIZE]);
-                p_wi = estimator.Ps[WINDOW_SIZE];
+                q_wi = estimator.get_frame()->q();
+                p_wi = estimator.get_frame()->p();
                 vPath_to_draw.push_back(p_wi);
-                double dStamp = estimator.Headers[WINDOW_SIZE];
+                uint64_t time_stamp = estimator.get_frame()->time_us;
                 double dt = t_processImage.toc();
                 dt_mean += (dt - dt_mean) / n;
                 n = std::min(n + 1., 100.);
                 dt_average += (dt - dt_average) / double(nn++);
                 cout << "1 BackEnd processImage dt: " << fixed << t_processImage.toc() << " mean dt: " << dt_mean << " average: " << dt_average << " stamp: " <<  dStamp << " p_wi: " << p_wi.transpose() << endl;
-                ofs_pose << fixed << dStamp << " " << p_wi.transpose() << " " << q_wi.coeffs().transpose() << endl;
+                ofs_pose << fixed << time_stamp << " " << p_wi.transpose() << " " << q_wi.coeffs().transpose() << endl;
             }
         }
         m_estimator.unlock();
@@ -409,13 +434,13 @@ void System::Draw()
         glEnd();
         
         // points
-        if (estimator.solver_flag == Estimator::SolverFlag::NON_LINEAR)
+        if (estimator.solver_flag == Estimator::SolverFlag::OPTIMIZATION)
         {
             glPointSize(5);
             glBegin(GL_POINTS);
-            for(int i = 0; i < WINDOW_SIZE+1;++i)
-            {
-                Vector3d p_wi = estimator.Ps[i];
+            auto &&sliding_window = estimator.get_sliding_window();
+            for (auto it : sliding_window.begin(); it != sliding_window.end(); ++it) {
+                Vector3d p_wi = it->first->p();
                 glColor3f(1, 0, 0);
                 glVertex3d(p_wi[0],p_wi[1],p_wi[2]);
             }
@@ -469,13 +494,13 @@ void System::DrawGLFrame()
         glEnd();
         
         // points
-        if (estimator.solver_flag == Estimator::SolverFlag::NON_LINEAR)
+        if (estimator.solver_flag == Estimator::SolverFlag::OPTIMIZATION)
         {
             glPointSize(5);
             glBegin(GL_POINTS);
-            for(int i = 0; i < WINDOW_SIZE+1;++i)
-            {
-                Vector3d p_wi = estimator.Ps[i];
+            auto &&sliding_window = estimator.get_sliding_window();
+            for (auto it : sliding_window.begin(); it != sliding_window.end(); ++it) {
+                Vector3d p_wi = it->first->p();
                 glColor3f(1, 0, 0);
                 glVertex3d(p_wi[0],p_wi[1],p_wi[2]);
             }
