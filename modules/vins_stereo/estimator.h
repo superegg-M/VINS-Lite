@@ -12,6 +12,7 @@
 #include "graph_optimization/problem_slam.h"
 
 #include "utility/tic_toc.h"
+#include "utility/utility.h"
 #include "sophus/so3.hpp"
 
 #include <unordered_map>
@@ -35,7 +36,7 @@
 #include "data_structure/landmark.h"
 //#include "data_structure/map.h"
 
-//#define INITIAL_ONLY_SLIDING_WINDOW_IS_FULL
+#define INITIAL_ONLY_SLIDING_WINDOW_IS_FULL
 
 namespace vins {
     using namespace graph_optimization;
@@ -92,8 +93,8 @@ namespace vins {
          * @param max_iters 最大 RANSAC 次数, 默认为30
          * @return 返回本质矩阵计算是否成功
          */
-        bool compute_essential_matrix(Mat33 &R, Vec3 &t, const std::shared_ptr<Frame> &frame_i, const std::shared_ptr<Frame> &frame_j, bool is_init_landmark=true, unsigned int max_iters=30);
-        bool compute_homography_matrix(Mat33 &R, Vec3 &t, const std::shared_ptr<Frame> &frame_i, const std::shared_ptr<Frame> &frame_j, bool is_init_landmark=true, unsigned int max_iters=30);
+        bool compute_essential_matrix(Mat33 &R, Vec3 &t, const std::shared_ptr<Frame> &frame_i, const std::shared_ptr<Frame> &frame_j, bool is_init_landmark=true, unsigned int max_iters=50);
+        bool compute_homography_matrix(Mat33 &R, Vec3 &t, const std::shared_ptr<Frame> &frame_i, const std::shared_ptr<Frame> &frame_j, bool is_init_landmark=true, unsigned int max_iters=50);
 
         // 2D-3D
         unsigned long global_triangulate_with(const std::shared_ptr<Frame> &frame_i, bool enforce=false);
@@ -122,12 +123,12 @@ namespace vins {
             return landmark->observations.size() >= 2 && _sliding_window.size() >= 2 &&
                    landmark->observations.front().first->time_us < _sliding_window[_sliding_window.size() - 2].first->time_us;
         }
-        bool is_sliding_window_full() const { return _sliding_window.size() == WINDOW_SIZE; }
+        bool is_sliding_window_full() const { return _sliding_window.size() >= WINDOW_SIZE; }
         bool is_data_enough() const {
 #ifdef INITIAL_ONLY_SLIDING_WINDOW_IS_FULL
-            return _sliding_window.size() == WINDOW_SIZE;
+            return _sliding_window.size() >= WINDOW_SIZE;
 #else
-            return _stream.size() == WINDOW_SIZE;
+            return _stream.size() >= WINDOW_SIZE;
 #endif
         }
 
@@ -136,8 +137,8 @@ namespace vins {
         bool remove_untriangulated_landmarks(bool lazy=false);
 
         double get_td() const { return _td; }
-        std::shared_ptr<Frame> get_frame() const { return _frame; }
-        std::deque<std::pair<std::shared_ptr<Frame>, std::shared_ptr<IMUIntegration>>> get_sliding_window() const { return _sliding_window; }
+        Frame get_frame() const { return *_frame; }
+        std::vector<Eigen::Vector3d> get_positions() const;
 
         bool _is_estimate_ext_param {false};
         bool _is_visual_initialized {false};
@@ -154,6 +155,7 @@ namespace vins {
 
         double _td {0.};
         std::vector<double *> _ext_params;
+        std::vector<double *> _ext_params_bp;
         std::vector<Eigen::Map<Eigen::Vector3d>> _t_ic;
         std::vector<Eigen::Map<Eigen::Quaterniond>> _q_ic;
 

@@ -31,10 +31,15 @@ namespace vins {
         _ext_params.resize(NUM_OF_CAM);
         for (auto &ext_param : _ext_params) {
             ext_param = new double[7]{0};
-//            std::memset(ext_param, 0, 7 * sizeof(double));
             ext_param[6] = 1.;
             _t_ic.emplace_back(ext_param);
             _q_ic.emplace_back(ext_param + 3);
+        }
+
+        _ext_params_bp.resize(NUM_OF_CAM);
+        for (auto &ext_param_bp : _ext_params_bp) {
+            ext_param_bp = new double[7]{0};
+            ext_param_bp[6] = 1.;
         }
 
         // 外参顶点
@@ -136,6 +141,10 @@ namespace vins {
         for (auto &ext_param : _ext_params) {
             delete [] ext_param;
         }
+
+        for (auto &ext_param_bp : _ext_params_bp) {
+            delete [] ext_param_bp;
+        }
     }
 
     void Estimator::set_ext_param(unsigned int index, const Eigen::Vector3d &t_ic, const Eigen::Quaterniond &q_ic) {
@@ -145,6 +154,7 @@ namespace vins {
         }
         _t_ic[index] = t_ic;
         _q_ic[index] = q_ic;
+        std::memcpy(_ext_params_bp[index], _ext_params[index], 7 * sizeof(double));
     }
 
     bool Estimator::initialize() {
@@ -236,6 +246,9 @@ namespace vins {
     }
 
     void Estimator::optimization() {
+#ifdef PRINT_INFO
+        std::cout << "running optimization" << std::endl;
+#endif
         if (_sliding_window.empty()) {
             return;
         }
@@ -572,37 +585,81 @@ namespace vins {
         }
         cost_new_problem = t_new_problem.toc();
 
+        t_solve_problem.tic();
+        // 保留第0帧数的pose
+        Eigen::Quaterniond q_0 = _vertex_pose_vec[0].q();
+        Eigen::Vector3d p_0 = _vertex_pose_vec[0].p();
         /*
         * 由于marg old的计算量大于marg new
         * 所以marg old时图优化的迭代次数应该小于marg new时
         */
-        t_solve_problem.tic();
         if (marginalization_flag == MarginalizationFlag::MARGIN_OLD) {
-            _vertex_pose_vec[0].set_fixed();
+            // _vertex_pose_vec[0].set_fixed();
             _problem.solve(4);
-            _vertex_pose_vec[0].set_fixed(false);
-
+            // _vertex_pose_vec[0].set_fixed(false);
+#ifdef PRINT_INFO
+            std::cout << "done problem solve" << std::endl;
+#endif
             if (is_sliding_window_full()) {
 #ifdef REDUCE_MOTION
                 _problem.marginalize(&_vertex_pose_vec[0], nullptr, _marg_landmarks, _marg_edges);
 #else
                 _problem.marginalize(&_vertex_pose_vec[0], &_vertex_motion_vec[0], _marg_landmarks, _marg_edges);
 #endif
-//                _problem.marginalize(_vertex_pose_vec[0], _vertex_motion_vec[0], _marg_landmarks, _marg_edges);
             }
         } else if (marginalization_flag == MarginalizationFlag::MARGIN_SECOND_NEW){
-            _vertex_pose_vec[0].set_fixed();
+            // _vertex_pose_vec[0].set_fixed();
             _problem.solve(5);
-            _vertex_pose_vec[0].set_fixed(false);
-
+            // _vertex_pose_vec[0].set_fixed(false);
+#ifdef PRINT_INFO
+            std::cout << "done problem solve" << std::endl;
+#endif
             if (is_sliding_window_full()) {
                 _problem.marginalize(&_vertex_pose_vec[_sliding_window.size() - 1], &_vertex_motion_vec[_sliding_window.size() - 1], _marg_landmarks, _marg_edges);
             }
         } else {
-            _vertex_pose_vec[0].set_fixed();
+            // _vertex_pose_vec[0].set_fixed();
             _problem.solve(5);
-            _vertex_pose_vec[0].set_fixed(false);
+            // _vertex_pose_vec[0].set_fixed(false);
+#ifdef PRINT_INFO
+            std::cout << "done problem solve" << std::endl;
+#endif
         }
+
+        // // 还原第0帧
+        // Eigen::Vector3d v_nav = q_0.toRotationMatrix().col(0);
+        // Eigen::Vector3d v_nav_est = _vertex_pose_vec[0].q().toRotationMatrix().col(0);
+        // double norm2 = sqrt(v_nav_est.head<2>().squaredNorm() * v_nav.head<2>().squaredNorm());
+        // double sin_psi = v_nav_est(0) * v_nav(1) - v_nav_est(1) * v_nav(0);
+        // double cos_psi = v_nav_est(0) * v_nav(0) + v_nav_est(1) * v_nav(1);
+        // Eigen::Quaterniond dq(norm2 + cos_psi, 0., 0., sin_psi);
+        // dq.normalize();
+        // Eigen::Matrix3d dR = dq.toRotationMatrix();
+        // for (unsigned int i = 0; i < frame_ordering; ++i) {
+        //     _vertex_pose_vec[i].q() = (dq * _vertex_pose_vec[i].q()).normalized();
+        //     _vertex_pose_vec[i].p() = dR * (_vertex_pose_vec[i].p() - _vertex_pose_vec[0].p()) + p_0;
+        //     _vertex_motion_vec[i].v() = dR * (_vertex_motion_vec[i].v());
+        // }
+
+        // 还原第0帧
+        Eigen::Vector3d ypr_0 = Utility::R2ypr(q_0.toRotationMatrix());
+        Eigen::Vector3d ypr_oldest = Utility::R2ypr(_vertex_pose_vec[0].q().toRotationMatrix());
+        double dyaw = ypr_0.x() - ypr_oldest.x();
+        Eigen::Matrix3d dR = Utility::ypr2R(Eigen::Vector3d(dyaw, 0, 0));
+        if (abs(abs(ypr_0.y()) - 90.) < 1. || abs(abs(ypr_oldest.y()) - 90.) < 1.) {
+            dR = (q_0 * _vertex_pose_vec[0].q().inverse()).toRotationMatrix();
+        }
+        auto dq = Eigen::Quaterniond(dR);
+        for (auto &frame : _stream) {
+            frame.first->q() = (dq * frame.first->q()).normalized();
+            frame.first->p() = dR * (frame.first->p() - _vertex_pose_vec[0].p()) + p_0;
+            frame.first->v() = dR * frame.first->v();
+        }
+        // for (unsigned int i = 0; i < frame_ordering; ++i) {
+            // _vertex_pose_vec[i].q() = (dq * _vertex_pose_vec[i].q()).normalized();
+            // _vertex_pose_vec[i].p() = dR * (_vertex_pose_vec[i].p() - _vertex_pose_vec[0].p()) + p_0;
+            // _vertex_motion_vec[i].v() = dR * _vertex_motion_vec[i].v();
+        // }
 
         cost_solve_problem = t_solve_problem.toc();
 
@@ -965,5 +1022,14 @@ namespace vins {
                 edge->vertices()[0]->parameters()[0] = -1.;  // 把逆深度值设置为负数
             }
         }
+    }
+
+    std::vector<Eigen::Vector3d> Estimator::get_positions() const {
+        std::vector<Eigen::Vector3d> positions;
+        positions.reserve(_sliding_window.size());
+        for (auto it = _sliding_window.begin(); it != _sliding_window.end(); ++it) {
+            positions.emplace_back(it->first->p());
+        }
+        return positions;
     }
 }

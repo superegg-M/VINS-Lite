@@ -12,7 +12,7 @@ namespace graph_optimization {
     public:
         EIGEN_MAKE_ALIGNED_OPERATOR_NEW;
         explicit EdgePnP(Vec3 point_pixel, Vec3 point_world)
-                : Edge(2, 1, std::vector<std::string>{"VertexPose"}),
+                : Edge(2, 1, std::vector<std::string>{"VertexPose"}, LossFunction::Type::CAUCHY),
                   _p_pixel(std::move(point_pixel)), _p_world(std::move(point_world)) {}
 
         /// 返回边的类型信息

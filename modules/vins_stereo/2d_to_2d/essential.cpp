@@ -17,8 +17,8 @@ namespace vins {
 
     bool Estimator::compute_essential_matrix(Mat33 &R, Vec3 &t, const std::shared_ptr<Frame> &frame_i, const std::shared_ptr<Frame> &frame_j,
                                              bool is_init_landmark, unsigned int max_iters) {
-        constexpr static double th_e2 = 3.841;
-        constexpr static double th_score = 5.991;
+        constexpr static double th_e2 = 3.841 / FOCAL_LENGTH;
+        constexpr static double th_score = 5.991 / FOCAL_LENGTH;
         constexpr static unsigned long th_count = 20;
 
         unsigned long max_num_points = max(frame_i->features.size(), frame_j->features.size());

@@ -3,14 +3,15 @@ project(vins_estimator)
 
 set(CMAKE_BUILD_TYPE "Release")
 set(CMAKE_CXX_FLAGS "-std=c++17")
-set(CMAKE_CXX_FLAGS_RELEASE "-O3 -march=armv8-a -Wall -g")
+set(CMAKE_CXX_FLAGS_RELEASE "-O3 -Wall -g")
 # set(CMAKE_CXX_FLAGS_RELEASE "-O3 -Wall -g -fopenmp -mfpmath=sse -march=native -mtune=native -funroll-loops -finline-functions -ffast-math -ftree-vectorize")
 
 set(CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake)
 
+find_package(Ceres REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(Pangolin REQUIRED)
-find_package(OpenCV 4 REQUIRED)
+find_package(OpenCV REQUIRED)
 find_package(Boost REQUIRED COMPONENTS filesystem program_options system)
 
 find_package ( OpenMP REQUIRED )
@@ -60,9 +61,9 @@ ADD_LIBRARY(MyVio SHARED
     src/utility/utility.cpp
     )
 
-target_compile_definitions(MyVio PRIVATE -DNUM_THREADS=4)    
-# target_compile_definitions(MyVio PRIVATE -DPRINT_INFO)
-# target_compile_definitions(MyVio PRIVATE -DDISPLAY_TRAJ)
+target_compile_definitions(MyVio PRIVATE -DNUM_THREADS=8)    
+target_compile_definitions(MyVio PRIVATE -DPRINT_INFO)
+target_compile_definitions(MyVio PRIVATE -DDISPLAY_TRAJ)
 
 target_link_libraries(MyVio  
   ${OpenCV_LIBS}  
@@ -77,7 +78,9 @@ target_link_libraries(run_euroc
   MyVio  
   -lpthread
   OpenMP::OpenMP_CXX) 
-# target_compile_definitions(run_euroc PRIVATE -DDISPLAY_TRAJ)
+target_compile_definitions(run_euroc PRIVATE -DDISPLAY_TRAJ)
 
-add_executable(testCurveFitting test/CurveFitting.cpp)
-target_link_libraries(testCurveFitting MyVio)
+
+
+# add_executable(testCurveFitting test/CurveFitting.cpp)
+# target_link_libraries(testCurveFitting MyVio)

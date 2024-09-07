@@ -14,7 +14,7 @@ namespace vins {
     static constexpr unsigned NUM_OF_F = 1000;
     static constexpr unsigned int WINDOW_SIZE = 10;
     static constexpr double FOCAL_LENGTH = 460.;
-    static constexpr double MIN_PARALLAX = 0.1;
+    static constexpr double MIN_PARALLAX = 10. / FOCAL_LENGTH;
     static constexpr double INIT_DEPTH = 0.1;
     static constexpr unsigned int SIZE_POSE = 7;
     static constexpr unsigned int SIZE_SPEEDBIAS = 9;

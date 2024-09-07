@@ -53,7 +53,7 @@ namespace graph_optimization {
      */
     class HuberLoss : public LossFunction {
     public:
-        explicit HuberLoss(double delta=1.345) : _delta(delta) {}
+        explicit HuberLoss(double delta=1.) : _delta(delta) {}
 
         ~HuberLoss() override = default;
 
@@ -71,7 +71,7 @@ namespace graph_optimization {
      */
     class CauchyLoss : public LossFunction {
     public:
-        explicit CauchyLoss(double c=2.3849) : _c2(c*c) {}
+        explicit CauchyLoss(double c=1.) : _c2(c*c) {}
 
         ~CauchyLoss() override = default;
 
@@ -89,7 +89,7 @@ namespace graph_optimization {
      */
     class TukeyLoss : public LossFunction {
     public:
-        explicit TukeyLoss(double c=4.685) : _c2(c*c) {}
+        explicit TukeyLoss(double c=1.) : _c2(c*c) {}
 
         ~TukeyLoss() override = default;
 

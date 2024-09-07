@@ -16,6 +16,9 @@ namespace vins {
     using namespace std;
 
     bool Estimator::structure_from_motion() {
+        // 因为尺度未知, 所以要把t_ic设为零
+        _t_ic[0].setZero();
+
         // 找出第一个与当前imu拥有足够视差的imu, 同时利用对极几何计算t_i_curr, R_i_curr
         unsigned long imu_index;
         Mat33 r_i_curr;
@@ -24,6 +27,7 @@ namespace vins {
 #ifdef PRINT_INFO
             cout << "Not enough features or parallax; Move device around" << endl;
 #endif
+            _t_ic[0] = Eigen::Map<Eigen::Vector3d>(_ext_params_bp[0]);
             return false;
         }
 
@@ -54,13 +58,14 @@ namespace vins {
             // pnp, 用 j - 1 的位姿作为 j 的初始位姿估计
             Vec3 t_wj  = _sliding_window[j - 1].first->p();
             Qd q_wj = _sliding_window[j - 1].first->q();
-            if (!iter_pnp(frame_j, &q_wj, &t_wj)) {
-                return false;
-            }
-//            epnp(frame_j);
+            // if (!iter_pnp(frame_j, &q_wj, &t_wj)) {
+            //     _t_ic[0] = Eigen::Map<Eigen::Vector3d>(_ext_params_bp[0]);
+            //     return false;
+            // }
+        //    epnp(frame_j);
 //            mlpnp(frame_j);
 //            dltpnp(frame_j);
-//            pnp(frame_j, &q_wj, &t_wj);
+           pnp(frame_j, &q_wj, &t_wj);
 
             // 三角化
             global_triangulate_with(frame_j, _frame);
@@ -81,13 +86,14 @@ namespace vins {
             // pnp, 用 j + 1 的位姿作为 j 的初始位姿估计
             Vec3 t_wj = _sliding_window[j + 1].first->p();
             Qd q_wj = _sliding_window[j + 1].first->q();
-            if (!iter_pnp(frame_j, &q_wj, &t_wj)) {
-                return false;
-            }
-//            epnp(frame_j);
+            // if (!iter_pnp(frame_j, &q_wj, &t_wj)) {
+            //     _t_ic[0] = Eigen::Map<Eigen::Vector3d>(_ext_params_bp[0]);
+            //     return false;
+            // }
+        //    epnp(frame_j);
 //            mlpnp(frame_j);
 //            dltpnp(frame_j);
-//            pnp(frame_j, &q_wj, &t_wj);
+           pnp(frame_j, &q_wj, &t_wj);
 
             // 三角化
             /*
@@ -97,7 +103,8 @@ namespace vins {
              * 这会导致 frame_j 中的特征点均无法进行三角化
              * 从而无法进行后续的 pnp
              * */
-            global_triangulate_with(frame_j, _sliding_window[j + 1].first);
+            global_triangulate_with(frame_j, frame_i); 
+            // global_triangulate_with(frame_j, _sliding_window[j + 1].first);
         }
 
         // 遍历所有特征点, 对没有赋值的特征点进行三角化
@@ -209,6 +216,7 @@ namespace vins {
         std::cout << "ba = " << _frame->ba().transpose() << std::endl;
         std::cout << "bg = " << _frame->bg().transpose() << std::endl;
 #endif
+        _t_ic[0] = Eigen::Map<Eigen::Vector3d>(_ext_params_bp[0]);
         return true;
     }
 

@@ -17,7 +17,7 @@ using namespace std;
 using namespace cv;
 using namespace Eigen;
 
-const int nDelayTimes = 2;
+const int nDelayTimes = 1;
 string sData_path = "/home/dataset/EuRoC/MH-05/mav0/";
 string sConfig_path = "../config/";
 

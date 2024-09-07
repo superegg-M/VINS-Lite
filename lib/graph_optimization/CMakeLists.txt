@@ -1,13 +1,7 @@
 find_package(Eigen3 REQUIRED)
 find_package (OpenMP REQUIRED)
 
-include_directories(
-  ${CMAKE_SOURCE_DIR}/include/
-  ${CMAKE_SOURCE_DIR}/thirdparty/Sophus/
-)
-
-add_library(graph_optimization
-        eigen_types.h
+add_library(graph_optimization SHARED
         vertex.cpp
         edge.cpp
         problem.cpp
@@ -19,9 +13,14 @@ add_library(graph_optimization
         loss_function.cpp
         problem_slam.cpp)
 
+target_include_directories(graph_optimization PUBLIC
+  ${CMAKE_SOURCE_DIR}/include/
+  ${CMAKE_SOURCE_DIR}/thirdparty/Sophus/
+)
+
 set_target_properties(graph_optimization PROPERTIES LINKER_LANGUAGE CXX)
 target_compile_definitions(graph_optimization PRIVATE -DUSE_OPENMP)
-target_compile_definitions(graph_optimization PRIVATE -DNUM_THREADS=4)
+target_compile_definitions(graph_optimization PRIVATE -DNUM_THREADS=8)
 
 #set_target_properties(graph_optimization PROPERTIES
 #        LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
@@ -37,7 +36,7 @@ target_compile_definitions(graph_optimization PRIVATE -DNUM_THREADS=4)
 #        ${CMAKE_BINARY_DIR}/lib/thirdparty/Sophus/sophus
 #)
 #target_link_libraries(graph_optimization ${TIC_TOC_LIB} ${SO_PLUS_LIB})
-target_link_libraries(graph_optimization tic_toc so_plus OpenMP::OpenMP_CXX)
+target_link_libraries(graph_optimization OpenMP::OpenMP_CXX)
 
 #target_include_directories(graph_optimization PUBLIC ${GRAPH_OPTIMIZATION_SOURCE_DIR})
 

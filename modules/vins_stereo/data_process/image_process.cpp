@@ -19,7 +19,9 @@ namespace vins {
         TicToc t_process;
         // 为frame赋时间
         _frame->time_us = time_stamp;
-//        pnp_local(_frame, _frame->q(), _frame->p());
+        // Eigen::Quaterniond q_init = _frame->q();
+        // Eigen::Vector3d p_init = _frame->p();
+        // pnp_local(_frame, &q_init, &p_init);
 
         // 把frame加入到stream中
         _stream.emplace_back(_frame, _pre_integral_stream);

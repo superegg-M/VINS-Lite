@@ -189,15 +189,35 @@ namespace vins {
         // 求解非线性问题
         nonlinear_problem.set_solver_type(graph_optimization::Problem::SolverType::LEVENBERG_MARQUARDT);
         vertex_ba->set_fixed();
-        vertex_bg->set_fixed();
+        // vertex_bg->set_fixed();
 #if NUM_OF_CAM > 1
         vertex_scale->set_fixed();
 #endif
-        nonlinear_problem.solve(30);
+        nonlinear_problem.solve(50);
 
         // 把求解后的结果赋值到顶点中
         scale_est = vertex_scale->scale();
         Qd q_wb0 = vertex_q_wb0->q();
+
+        // // 把yaw设为0
+        // Eigen::Vector3d x_axis = {1., 0., 0.};
+        // Eigen::Vector3d x_axis_est = q_wb0.toRotationMatrix().col(0);
+        // double x_norm2 = sqrt(x_axis_est.head<2>().squaredNorm() * x_axis.head<2>().squaredNorm());
+        // double x_sin_psi = x_axis_est(0) * x_axis(1) - x_axis_est(1) * x_axis(0);
+        // double x_cos_psi = x_axis_est(0) * x_axis(0) + x_axis_est(1) * x_axis(1);
+        // Eigen::Quaterniond dq_heading(x_norm2 + x_cos_psi, 0., 0., x_sin_psi);
+        // dq_heading.normalize();
+        // q_wb0 = (dq_heading * q_wb0).normalized();
+
+        // 把yaw设为0
+        Eigen::Vector3d ypr_0 = {0., 0., 0.};
+        Eigen::Vector3d ypr_oldest = Utility::R2ypr(q_wb0.toRotationMatrix());
+        double dyaw = ypr_0.x() - ypr_oldest.x();
+        Eigen::Matrix3d dR = Utility::ypr2R(Eigen::Vector3d(dyaw, 0, 0));
+        if (abs(abs(ypr_0.y()) - 90.) < 1. || abs(abs(ypr_oldest.y()) - 90.) < 1.) {
+            dR = (q_wb0 * _vertex_pose_vec[0].q().inverse()).toRotationMatrix();
+        }
+        q_wb0 = Eigen::Quaterniond(dR) * q_wb0;
 
         // stream
         for (auto &frame_it : _stream) {

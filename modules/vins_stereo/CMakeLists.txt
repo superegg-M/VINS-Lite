@@ -1,14 +1,8 @@
 find_package(Eigen3 REQUIRED)
-find_package (OpenMP REQUIRED)
+find_package(OpenMP REQUIRED)
 
-include_directories(
-  ${CMAKE_SOURCE_DIR}/lib/
-  ${CMAKE_SOURCE_DIR}/include/
-  ${CMAKE_SOURCE_DIR}/thirdparty/Sophus/
-)
-
-add_library(vins_graph_optimization
-        vertex/vertex_pose.cpp
+add_library(vins_stereo SHARED
+	vertex/vertex_pose.cpp
         vertex/vertex_motion.cpp
         vertex/vertex_point3d.cpp
         vertex/vertex_inverse_depth.cpp
@@ -28,12 +22,7 @@ add_library(vins_graph_optimization
         edge/edge_epipolar.cpp
         edge/edge_align.cpp
         edge/edge_align_linear.cpp
-)
-target_link_libraries(vins_graph_optimization PUBLIC graph_optimization OpenMP::OpenMP_CXX)
-target_compile_definitions(vins_graph_optimization PRIVATE -DUSE_OPENMP)
-target_compile_definitions(vins_graph_optimization PRIVATE -DNUM_THREADS=4)
 
-add_library(vins_stereo
         2d_to_2d/essential.cpp
         2d_to_2d/homography.cpp
 
@@ -64,10 +53,17 @@ add_library(vins_stereo
         estimator.cpp
 )
 
-target_link_libraries(vins_stereo vins_graph_optimization OpenMP::OpenMP_CXX)
+target_include_directories(vins_stereo PUBLIC
+  ${CMAKE_SOURCE_DIR}/lib/
+  ${CMAKE_SOURCE_DIR}/include/
+  ${CMAKE_SOURCE_DIR}/thirdparty/Sophus/
+)
+
+target_link_libraries(vins_stereo PUBLIC graph_optimization OpenMP::OpenMP_CXX)
+
 target_compile_definitions(vins_stereo PRIVATE -DUSE_OPENMP)
-target_compile_definitions(vins_stereo PRIVATE -DNUM_THREADS=4)
-# target_compile_definitions(vins_stereo PRIVATE -DPRINT_INFO)
+target_compile_definitions(vins_stereo PRIVATE -DNUM_THREADS=8)
+target_compile_definitions(vins_stereo PRIVATE -DPRINT_INFO)
 # target_compile_definitions(vins_stereo PRIVATE -DREDUCE_MOTION)
 target_compile_definitions(vins_stereo PRIVATE -DNUM_OF_CAM=1)
 target_compile_definitions(vins_stereo PRIVATE -DUSE_IMU)
