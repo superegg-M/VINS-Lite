@@ -18,7 +18,7 @@ System::System(string sConfig_file_)
     trackerData[0].readIntrinsicParameter(sConfig_file);
 
     for (int i = 0; i < NUM_OF_CAM; i++) {
-        estimator.set_ext_param(i, TIC[i], Qd(RIC[i]))
+        estimator.set_ext_param(i, TIC[i], Eigen::Quaterniond(RIC[i]));
     }
     ofs_pose.open("./pose_output.txt",fstream::app | fstream::out);
     if(!ofs_pose.is_open())
@@ -96,7 +96,7 @@ void System::PubImageData(double dStampSec, Mat &img)
     TicToc t_r;
     // cout << "3 PubImageData t : " << dStampSec << endl;
     trackerData[0].readImage(img, dStampSec);
-    std::cout << "0 Frontend trackerData dt: " << t_r.toc() << std::endl;
+    // std::cout << "0 Frontend trackerData dt: " << t_r.toc() << std::endl;
 
     for (unsigned int i = 0;; i++)
     {
@@ -339,7 +339,7 @@ void System::ProcessBackEnd()
             //     image[feature_id].emplace_back(camera_id, xyz_uv_velocity);
             // }
             // 替换为vector, 方便processImage中进行多线程操作
-            std::vector<std::pair<int, vector<pair<int, Eigen::Matrix<double, 7, 1>>>>> image;
+            std::vector<std::pair<unsigned long, std::vector<Eigen::Matrix<double, 7, 1>>>> image;
             image.resize(img_msg->points.size() / NUM_OF_CAM);
             for (unsigned int i = 0; i < img_msg->points.size(); i += NUM_OF_CAM) {
                 unsigned int index = i / NUM_OF_CAM;
@@ -358,28 +358,29 @@ void System::ProcessBackEnd()
                     assert(z == 1);
                     Eigen::Matrix<double, 7, 1> xyz_uv_velocity;
                     xyz_uv_velocity << x, y, z, p_u, p_v, velocity_x, velocity_y;
-                    image[index].second.emplace_back(camera_id, xyz_uv_velocity);
+                    image[index].second.emplace_back(xyz_uv_velocity);
                 }
             }
             TicToc t_processImage;
-            estimator.processImage(image, img_msg->header*1e6);
+            estimator.process_image(image, uint64_t(img_msg->header*1e6));
             static double dt_mean = 0.;
             static double n = 1.;
             static double dt_average = 0.;
             static unsigned int nn = 1;
-            if (estimator.solver_flag == Estimator::SolverFlag::OPTIMIZATION)
+            if (estimator.solver_flag == vins::Estimator::SolverFlag::OPTIMIZATION)
             {
+                auto &&frame = estimator.get_frame();
                 Vector3d p_wi;
                 Quaterniond q_wi;
-                q_wi = estimator.get_frame()->q();
-                p_wi = estimator.get_frame()->p();
+                q_wi = frame.q();
+                p_wi = frame.p();
                 vPath_to_draw.push_back(p_wi);
-                uint64_t time_stamp = estimator.get_frame()->time_us;
+                uint64_t time_stamp = frame.time_us;
                 double dt = t_processImage.toc();
                 dt_mean += (dt - dt_mean) / n;
                 n = std::min(n + 1., 100.);
                 dt_average += (dt - dt_average) / double(nn++);
-                cout << "1 BackEnd processImage dt: " << fixed << t_processImage.toc() << " mean dt: " << dt_mean << " average: " << dt_average << " stamp: " <<  dStamp << " p_wi: " << p_wi.transpose() << endl;
+                cout << "1 BackEnd processImage dt: " << fixed << t_processImage.toc() << " mean dt: " << dt_mean << " average: " << dt_average << " stamp: " <<  time_stamp << " p_wi: " << p_wi.transpose() << endl;
                 ofs_pose << fixed << time_stamp << " " << p_wi.transpose() << " " << q_wi.coeffs().transpose() << endl;
             }
         }
@@ -434,15 +435,14 @@ void System::Draw()
         glEnd();
         
         // points
-        if (estimator.solver_flag == Estimator::SolverFlag::OPTIMIZATION)
+        if (estimator.solver_flag == vins::Estimator::SolverFlag::OPTIMIZATION)
         {
             glPointSize(5);
             glBegin(GL_POINTS);
-            auto &&sliding_window = estimator.get_sliding_window();
-            for (auto it : sliding_window.begin(); it != sliding_window.end(); ++it) {
-                Vector3d p_wi = it->first->p();
+            auto &&positions = estimator.get_positions();
+            for (auto &position : positions) {
                 glColor3f(1, 0, 0);
-                glVertex3d(p_wi[0],p_wi[1],p_wi[2]);
+                glVertex3d(position[0],position[1],position[2]);
             }
             glEnd();
         }
@@ -494,15 +494,14 @@ void System::DrawGLFrame()
         glEnd();
         
         // points
-        if (estimator.solver_flag == Estimator::SolverFlag::OPTIMIZATION)
+        if (estimator.solver_flag == vins::Estimator::SolverFlag::OPTIMIZATION)
         {
             glPointSize(5);
             glBegin(GL_POINTS);
-            auto &&sliding_window = estimator.get_sliding_window();
-            for (auto it : sliding_window.begin(); it != sliding_window.end(); ++it) {
-                Vector3d p_wi = it->first->p();
+            auto &&positions = estimator.get_positions();
+            for (auto &position : positions) {
                 glColor3f(1, 0, 0);
-                glVertex3d(p_wi[0],p_wi[1],p_wi[2]);
+                glVertex3d(position[0],position[1],position[2]);
             }
             glEnd();
         }
