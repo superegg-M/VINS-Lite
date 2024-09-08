@@ -1,3 +1,11 @@
+/*
+ * @Author: CainHu cainhsui@gmail.com
+ * @Date: 2024-09-07 01:10:13
+ * @LastEditors: CainHu cainhsui@gmail.com
+ * @LastEditTime: 2024-09-08 16:05:43
+ * @FilePath: /VINS-Lite/modules/vins_stereo/edge/edge_epipolar.cpp
+ * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
+ */
 //
 // Created by Cain on 2024/4/12.
 //
@@ -17,7 +25,7 @@ void graph_optimization::EdgeEpipolar::compute_residual() {
 
     // 误差
     _residual[0] = _p1.dot(t.cross(q.toRotationMatrix() * _p2));
-//    _residual[0] = _p2.dot(q.toRotationMatrix() * _p1.cross(t));
+    _residual[0] += _p2.dot(q.toRotationMatrix() * _p1.cross(t));
 }
 
 void graph_optimization::EdgeEpipolar::compute_jacobians() {
@@ -32,10 +40,10 @@ void graph_optimization::EdgeEpipolar::compute_jacobians() {
 
     Eigen::Matrix<double, 1, 3> jacobian_q;
     jacobian_q = -_p1.transpose() * Sophus::SO3d::hat(t) * r * Sophus::SO3d::hat(_p2);
-//    jacobian_q = _p2.transpose() * Sophus::SO3d::hat(r.transpose() * _p1.cross(t));
+    jacobian_q += _p2.transpose() * Sophus::SO3d::hat(r.transpose() * _p1.cross(t));
 
     Eigen::Matrix<double, 1, 3> dr_dt = -_p1.transpose() * Sophus::SO3d::hat(r * _p2);
-//    Eigen::Matrix<double, 1, 3> dr_dt = _p2.transpose() * r.transpose() * Sophus::SO3d::hat(_p1);
+    dr_dt += _p2.transpose() * r.transpose() * Sophus::SO3d::hat(_p1);
     Eigen::Matrix<double, 3, 2> dt_dqt;
     dt_dqt.col(0) = -rt.col(1);
     dt_dqt.col(1) = rt.col(0);

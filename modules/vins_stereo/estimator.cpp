@@ -650,16 +650,16 @@ namespace vins {
             dR = (q_0 * _vertex_pose_vec[0].q().inverse()).toRotationMatrix();
         }
         auto dq = Eigen::Quaterniond(dR);
-        for (auto &frame : _stream) {
-            frame.first->q() = (dq * frame.first->q()).normalized();
-            frame.first->p() = dR * (frame.first->p() - _vertex_pose_vec[0].p()) + p_0;
-            frame.first->v() = dR * frame.first->v();
-        }
-        // for (unsigned int i = 0; i < frame_ordering; ++i) {
-            // _vertex_pose_vec[i].q() = (dq * _vertex_pose_vec[i].q()).normalized();
-            // _vertex_pose_vec[i].p() = dR * (_vertex_pose_vec[i].p() - _vertex_pose_vec[0].p()) + p_0;
-            // _vertex_motion_vec[i].v() = dR * _vertex_motion_vec[i].v();
+        // for (auto &frame : _stream) {
+        //     frame.first->q() = (dq * frame.first->q()).normalized();
+        //     frame.first->p() = dR * (frame.first->p() - _vertex_pose_vec[0].p()) + p_0;
+        //     frame.first->v() = dR * frame.first->v();
         // }
+        for (unsigned int i = 0; i < frame_ordering; ++i) {
+            _vertex_pose_vec[i].q() = (dq * _vertex_pose_vec[i].q()).normalized();
+            _vertex_pose_vec[i].p() = dR * (_vertex_pose_vec[i].p() - _vertex_pose_vec[0].p()) + p_0;
+            _vertex_motion_vec[i].v() = dR * _vertex_motion_vec[i].v();
+        }
 
         cost_solve_problem = t_solve_problem.toc();
 

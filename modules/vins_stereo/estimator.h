@@ -93,8 +93,10 @@ namespace vins {
          * @param max_iters 最大 RANSAC 次数, 默认为30
          * @return 返回本质矩阵计算是否成功
          */
-        bool compute_essential_matrix(Mat33 &R, Vec3 &t, const std::shared_ptr<Frame> &frame_i, const std::shared_ptr<Frame> &frame_j, bool is_init_landmark=true, unsigned int max_iters=50);
-        bool compute_homography_matrix(Mat33 &R, Vec3 &t, const std::shared_ptr<Frame> &frame_i, const std::shared_ptr<Frame> &frame_j, bool is_init_landmark=true, unsigned int max_iters=50);
+        bool compute_essential_matrix(Mat33 &R, Vec3 &t, const std::shared_ptr<Frame> &frame_i, const std::shared_ptr<Frame> &frame_j, bool is_init_landmark=true, unsigned int max_iters=100);
+        bool compute_homography_matrix(Mat33 &R, Vec3 &t, const std::shared_ptr<Frame> &frame_i, const std::shared_ptr<Frame> &frame_j, bool is_init_landmark=true, unsigned int max_iters=100);
+        // Eigen::Matrix<double, 3, 3> solve_essential_5pt(const Eigen::Matrix<double, 5, 9> &D);
+        // Eigen::Matrix<double, 3, 3> solve_essential_8pt(const Eigen::Matrix<double, 8, 9> &D);
 
         // 2D-3D
         unsigned long global_triangulate_with(const std::shared_ptr<Frame> &frame_i, bool enforce=false);
