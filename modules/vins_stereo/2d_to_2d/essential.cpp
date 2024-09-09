@@ -225,9 +225,11 @@ namespace vins {
 
     bool Estimator::compute_essential_matrix(Mat33 &R, Vec3 &t, const std::shared_ptr<Frame> &frame_i, const std::shared_ptr<Frame> &frame_j,
                                              bool is_init_landmark, unsigned int max_iters) {
-        constexpr static double th_e2 = 0.3841 / FOCAL_LENGTH;
-        constexpr static double th_score = 0.5991 / FOCAL_LENGTH;
-        constexpr static unsigned long th_count = 20;
+        constexpr static double sigma = 0.3 / FOCAL_LENGTH;  
+        constexpr static double sigma2 = sigma * sigma;                                      
+        constexpr static double th_e2 = 3.841 * sigma2;
+        constexpr static double th_score = 5.991 * sigma2;
+        constexpr static unsigned long th_count = 15;
 
         unsigned long max_num_points = max(frame_i->features.size(), frame_j->features.size());
         vector<pair<const Vec3*, const Vec3*>> match_pairs;
@@ -265,10 +267,11 @@ namespace vins {
 #endif
 
         // 平均视差必须大于一定值
-        if (average_parallax * 460. < 60.) {
+        if (average_parallax * FOCAL_LENGTH < 30.) {
             return false;
         }
 
+#ifndef FIVE_POINT_ALGORITHM
         // 归一化变换参数
         Mat33 Ti, Tj;
         double meas_x_i = 0., meas_y_i = 0.;
@@ -315,24 +318,23 @@ namespace vins {
             normal_match_pairs[k].second.x() = (match_pairs[k].second->x() - meas_x_j) / dev_x_j;
             normal_match_pairs[k].second.y() = (match_pairs[k].second->y() - meas_y_j) / dev_y_j;
         }
+#endif
 
         // 构造随机index batch
         std::random_device rd;
         std::mt19937 gen(rd());
-        vector<array<unsigned long, N_POINTS>> point_indices_set(max_iters);    // TODO: 设为静态变量
         array<unsigned long, N_POINTS> local_index_map {};
-        
         vector<unsigned long> global_index_map(num_points);
         for (unsigned long k = 0; k < num_points; ++k) {
             global_index_map[k] = k;
         }
-
-        for (unsigned int n = 0; n < max_iters; ++n) {
+        auto generator_indices_set = [&]() -> std::array<unsigned long, N_POINTS> {
+            std::array<unsigned long, N_POINTS> point_indices_set;
             for (unsigned int k = 0; k < N_POINTS; ++k) {
                 std::uniform_int_distribution<unsigned int> dist(0, global_index_map.size() - 1);
                 unsigned int rand_i = dist(gen);
                 auto index = global_index_map[rand_i];
-                point_indices_set[n][k] = index;
+                point_indices_set[k] = index;
                 local_index_map[k] = index;
 
                 global_index_map[rand_i] = global_index_map.back();
@@ -342,10 +344,12 @@ namespace vins {
             for (unsigned int k = 0; k < N_POINTS; ++k) {
                 global_index_map.emplace_back(local_index_map[k]);
             }
-        }
+            return point_indices_set;
+        };
 
         // TODO: 使用多线程
         // RANSAC: 计算本质矩阵
+        double ransac_k = std::log(std::max(1. - 0.99, 1e-5));
         Mat33 best_E;
         double best_score = 0.;
         unsigned int best_index = 0;
@@ -355,12 +359,20 @@ namespace vins {
         for (unsigned int n = 0; n < max_iters; ++n) {
             // 极线误差矩阵
             Eigen::Matrix<double, N_POINTS, 9> D;
+            auto &&point_indices_set = generator_indices_set();
             for (unsigned int k = 0; k < N_POINTS; ++k) {
-                unsigned int index = point_indices_set[n][k];
+                unsigned int index = point_indices_set[k];
+#ifdef FIVE_POINT_ALGORITHM
+                double u1 = match_pairs[index].first->x();
+                double v1 = match_pairs[index].first->y();
+                double u2 = match_pairs[index].second->x();
+                double v2 = match_pairs[index].second->y();
+#else                
                 double u1 = normal_match_pairs[index].first.x();
                 double v1 = normal_match_pairs[index].first.y();
                 double u2 = normal_match_pairs[index].second.x();
                 double v2 = normal_match_pairs[index].second.y();
+#endif
                 D(k, 0) = u1 * u2;
                 D(k, 1) = u1 * v2;
                 D(k, 2) = u1;
@@ -384,12 +396,17 @@ namespace vins {
                 num_outliers[curr_index] = 0;
                 for (unsigned long k = 0; k < num_points; ++k) {
                     bool is_outlier = false;
-
+#ifdef FIVE_POINT_ALGORITHM
+                    double u1 = match_pairs[k].first->x();
+                    double v1 = match_pairs[k].first->y();
+                    double u2 = match_pairs[k].second->x();
+                    double v2 = match_pairs[k].second->y();
+#else
                     double u1 = normal_match_pairs[k].first.x();
                     double v1 = normal_match_pairs[k].first.y();
                     double u2 = normal_match_pairs[k].second.x();
                     double v2 = normal_match_pairs[k].second.y();
-
+#endif
                     double a = u1 * e00 + v1 * e10 + e20;
                     double b = u1 * e01 + v1 * e11 + e21;
                     double c = u1 * e02 + v1 * e12 + e22;
@@ -421,13 +438,18 @@ namespace vins {
                 if (score > best_score) {
                     best_score = score;
                     best_E = E;
+                    double inlier_ratio = double(num_points - num_outliers[curr_index]) / double(num_points);
+                    double ransac_n = ransac_k / std::log(1. - std::pow(inlier_ratio, N_POINTS));
+                    if (ransac_n < double(max_iters)) {
+                        max_iters = (unsigned int)std::ceil(ransac_n);
+                    }
                     std::swap(curr_index, best_index);
                 }
             } 
         }
 
         // outlier的点过多
-        if (10 * num_outliers[best_index] > 2 * num_points) {
+        if ((num_points - num_outliers[best_index]) < std::max(num_points * 5 / 10, (unsigned long)12)) {
 #ifdef PRINT_INFO
             std::cout << "10 * num_outliers > 5 * num_points" << std::endl;
 #endif
@@ -435,7 +457,9 @@ namespace vins {
         }
 
         // 从E中还原出R, t
+#ifndef FIVE_POINT_ALGORITHM        
         best_E = Ti.transpose() * best_E * Tj;
+#endif
         Eigen::JacobiSVD<Mat33> E_svd(best_E, Eigen::ComputeFullU | Eigen::ComputeFullV);
         Mat33 V = E_svd.matrixV();
         Mat33 U1 = E_svd.matrixU();

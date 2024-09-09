@@ -688,7 +688,9 @@ namespace vins {
     }
 
     void Estimator::slide_window() {
+#ifdef PRINT_INFO       
         std::cout << "slide_window" << std::endl;
+#endif        
         TicToc t_slide_window;
 
         // 滑窗若不满, 则不移除最老帧

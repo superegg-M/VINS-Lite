@@ -247,11 +247,7 @@ namespace vins {
 #ifdef PRINT_INFO
         std::cout << "process_cost = " << process_cost << " ms" << std::endl;
 #endif
-//        std::cout << "5" << std::endl;
-//        std::cout << "_windows.size() = " << _windows.size() << std::endl;
-//        marginalization_flag = MARGIN_OLD;
-//        slide_window();
-//        std::cout << "6" << std::endl;
+#ifdef PRINT_INFO
         std::cout << "_sliding_window.size() = " << _sliding_window.size() << std::endl;
         std::cout << "_landmarks.size() = " << _landmarks.size() << std::endl;
         if (marginalization_flag == MarginalizationFlag::MARGIN_OLD) {
@@ -262,7 +258,7 @@ namespace vins {
             std::cout << "marg_flag = none" << std::endl;
         }
         std::cout << "is key frame = " << _frame->is_key_frame << std::endl;
-
+#endif
         backend();
 
         // 下一时刻的值
