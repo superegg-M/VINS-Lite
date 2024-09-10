@@ -20,7 +20,7 @@ target_include_directories(graph_optimization PUBLIC
 
 set_target_properties(graph_optimization PROPERTIES LINKER_LANGUAGE CXX)
 target_compile_definitions(graph_optimization PRIVATE -DUSE_OPENMP)
-target_compile_definitions(graph_optimization PRIVATE -DNUM_THREADS=8)
+target_compile_definitions(graph_optimization PRIVATE -DNUM_THREADS=4)
 
 #set_target_properties(graph_optimization PROPERTIES
 #        LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}

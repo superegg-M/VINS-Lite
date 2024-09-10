@@ -363,6 +363,7 @@ void System::ProcessBackEnd()
             }
             TicToc t_processImage;
             estimator.process_image(image, uint64_t(img_msg->header*1e6));
+            double dt = t_processImage.toc();
             static double dt_mean = 0.;
             static double n = 1.;
             static double dt_average = 0.;
@@ -376,12 +377,15 @@ void System::ProcessBackEnd()
                 p_wi = frame.p();
                 vPath_to_draw.push_back(p_wi);
                 uint64_t time_stamp = frame.time_us;
-                double dt = t_processImage.toc();
                 dt_mean += (dt - dt_mean) / n;
                 n = std::min(n + 1., 100.);
                 dt_average += (dt - dt_average) / double(nn++);
-                cout << "1 BackEnd processImage dt: " << fixed << t_processImage.toc() << " mean dt: " << dt_mean << " average: " << dt_average << " stamp: " <<  time_stamp << " p_wi: " << p_wi.transpose() << endl;
+                cout << "1 OPTIMIZATION dt: " << fixed << dt << " mean dt: " << dt_mean << " average: " << dt_average << " stamp: " <<  time_stamp << " p_wi: " << p_wi.transpose() << endl;
                 ofs_pose << fixed << time_stamp << " " << p_wi.transpose() << " " << q_wi.coeffs().transpose() << endl;
+            } else {
+            	auto &&frame = estimator.get_frame();
+            	uint64_t time_stamp = frame.time_us;
+            	cout << "1 INITIALIZATION dt: " << fixed << dt << " stamp: " <<  time_stamp << endl;
             }
         }
         m_estimator.unlock();

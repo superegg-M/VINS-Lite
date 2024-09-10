@@ -1,5 +1,6 @@
 find_package(Eigen3 REQUIRED)
 find_package(OpenMP REQUIRED)
+find_package(OpenCV REQUIRED)
 
 add_library(vins_stereo SHARED
 	vertex/vertex_pose.cpp
@@ -59,10 +60,10 @@ target_include_directories(vins_stereo PUBLIC
   ${CMAKE_SOURCE_DIR}/thirdparty/Sophus/
 )
 
-target_link_libraries(vins_stereo PUBLIC graph_optimization OpenMP::OpenMP_CXX)
+target_link_libraries(vins_stereo PUBLIC graph_optimization OpenMP::OpenMP_CXX ${OpenCV_LIBS})
 
 target_compile_definitions(vins_stereo PRIVATE -DUSE_OPENMP)
-target_compile_definitions(vins_stereo PRIVATE -DNUM_THREADS=8)
+target_compile_definitions(vins_stereo PRIVATE -DNUM_THREADS=4)
 # target_compile_definitions(vins_stereo PRIVATE -DPRINT_INFO)
 # target_compile_definitions(vins_stereo PRIVATE -DREDUCE_MOTION)
 target_compile_definitions(vins_stereo PRIVATE -DNUM_OF_CAM=1)
