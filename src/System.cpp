@@ -50,7 +50,7 @@ System::~System()
     ofs_pose.close();
 }
 
-void System::PubImageData(double dStampSec, Mat &img)
+void System::PubImageData(double dStampSec, UMat &img)
 {
     if (!init_feature)
     {
@@ -96,7 +96,7 @@ void System::PubImageData(double dStampSec, Mat &img)
     TicToc t_r;
     // cout << "3 PubImageData t : " << dStampSec << endl;
     trackerData[0].readImage(img, dStampSec);
-    // std::cout << "0 Frontend trackerData dt: " << t_r.toc() << std::endl;
+    std::cout << "0 Frontend trackerData dt: " << t_r.toc() << std::endl;
 
     for (unsigned int i = 0;; i++)
     {
@@ -156,7 +156,7 @@ void System::PubImageData(double dStampSec, Mat &img)
 
 #ifdef DISPLAY_TRAJ
 #ifdef __linux__
-    cv::Mat show_img;
+    cv::UMat show_img;
 	cv::cvtColor(img, show_img, CV_GRAY2RGB);
 	if (SHOW_TRACK)
 	{

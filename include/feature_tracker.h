@@ -30,7 +30,7 @@ class FeatureTracker
   public:
     FeatureTracker();
 
-    void readImage(const cv::Mat &_img,double _cur_time);
+    void readImage(const cv::UMat &_img,double _cur_time);
 
     void setMask();
 
@@ -46,9 +46,9 @@ class FeatureTracker
 
     void undistortedPoints();
 
-    cv::Mat mask;
-    cv::Mat fisheye_mask;
-    cv::Mat prev_img, cur_img, forw_img;
+    cv::UMat mask;
+    cv::UMat fisheye_mask;
+    cv::UMat prev_img, cur_img, forw_img;
     vector<cv::Point2f> n_pts;
     vector<cv::Point2f> prev_pts, cur_pts, forw_pts;
     vector<cv::Point2f> prev_un_pts, cur_un_pts;

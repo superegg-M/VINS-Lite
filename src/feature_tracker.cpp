@@ -40,7 +40,7 @@ void FeatureTracker::setMask()
     if(FISHEYE)
         mask = fisheye_mask.clone();
     else
-        mask = cv::Mat(ROW, COL, CV_8UC1, cv::Scalar(255));
+        mask = cv::UMat(ROW, COL, CV_8UC1, cv::Scalar(255));
     
 
     // prefer to keep features that are tracked for long time
@@ -59,9 +59,11 @@ void FeatureTracker::setMask()
     ids.clear();
     track_cnt.clear();
 
+    cv::Mat mask_cpu;
+    mask.copyTo(mask_cpu);
     for (auto &it : cnt_pts_id)
     {
-        if (mask.at<uchar>(it.second.first) == 255)     // 如果该区域没被mask, 则进行mask
+        if (mask_cpu.at<uchar>(it.second.first) == 255)     // 如果该区域没被mask, 则进行mask
         {
             forw_pts.push_back(it.second.first);
             ids.push_back(it.second.second);
@@ -82,9 +84,9 @@ void FeatureTracker::addPoints()
     }
 }
 
-void FeatureTracker::readImage(const cv::Mat &_img, double _cur_time)
+void FeatureTracker::readImage(const cv::UMat &_img, double _cur_time)
 {
-    cv::Mat img;
+    cv::UMat img;
     TicToc t_r;
     cur_time = _cur_time;
 
@@ -228,6 +230,8 @@ void FeatureTracker::readIntrinsicParameter(const string &calib_file)
 
 void FeatureTracker::showUndistortion(const string &name)
 {
+    cv::Mat cur_img_cpu;
+    cur_img.copyTo(cur_img_cpu);
     cv::Mat undistortedImg(ROW + 600, COL + 600, CV_8UC1, cv::Scalar(0));
     vector<Eigen::Vector2d> distortedp, undistortedp;
     for (int i = 0; i < COL; i++)
@@ -251,7 +255,7 @@ void FeatureTracker::showUndistortion(const string &name)
         //printf("%lf %lf\n", pp.at<float>(1, 0), pp.at<float>(0, 0));
         if (pp.at<float>(1, 0) + 300 >= 0 && pp.at<float>(1, 0) + 300 < ROW + 600 && pp.at<float>(0, 0) + 300 >= 0 && pp.at<float>(0, 0) + 300 < COL + 600)
         {
-            undistortedImg.at<uchar>(pp.at<float>(1, 0) + 300, pp.at<float>(0, 0) + 300) = cur_img.at<uchar>(distortedp[i].y(), distortedp[i].x());
+            undistortedImg.at<uchar>(pp.at<float>(1, 0) + 300, pp.at<float>(0, 0) + 300) = cur_img_cpu.at<uchar>(distortedp[i].y(), distortedp[i].x());
         }
         else
         {
@@ -266,7 +270,7 @@ void FeatureTracker::undistortedPoints()
 {
     cur_un_pts.clear();
     cur_un_pts_map.clear();
-    //cv::undistortPoints(cur_pts, un_pts, K, cv::Mat());
+    //cv::undistortPoints(cur_pts, un_pts, K, cv::UMat());
     for (unsigned int i = 0; i < cur_pts.size(); i++)
     {
         Eigen::Vector2d a(cur_pts[i].x, cur_pts[i].y);
