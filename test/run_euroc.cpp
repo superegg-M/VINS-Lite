@@ -9,6 +9,7 @@
 
 //#include <cv.h>
 #include <opencv2/opencv.hpp>
+#include <opencv2/core/ocl.hpp>
 #include <opencv2/highgui/highgui.hpp>
 #include <eigen3/Eigen/Dense>
 #include "System.h"
@@ -52,6 +53,17 @@ void PubImuData()
 
 void PubImageData()
 {
+	// std::vector<cv::ocl::PlatformInfo> plats;
+	// cv::ocl::getPlatfomsInfo(plats);
+	// std::cout << "size of plats = " << plats.size() << std::endl;
+	// const cv::ocl::PlatformInfo *platform = &plats[0];
+	// std::cout << "Platform Name: " << platform->name().c_str() << std::endl;
+	cv::ocl::Device dev;
+	std::cout << "Device name: " << dev.name().c_str() << std::endl;
+
+	cv::ocl::setUseOpenCL(true);
+	std::cout << "Use the OpenCL Device?" << cv::ocl::useOpenCL() << std::endl;
+
 	string sImage_file = sConfig_path + "MH_05_cam0.txt";
 
 	cout << "1 PubImageData start sImage_file: " << sImage_file << endl;
@@ -76,7 +88,9 @@ void PubImageData()
 		// cout << "Image t : " << fixed << dStampNSec << " Name: " << sImgFileName << endl;
 		string imagePath = sData_path + "cam0/data/" + sImgFileName;
 
-		Mat img = imread(imagePath.c_str(), 0);
+		// UMat img = imread(imagePath.c_str(), 0);
+		UMat img;
+		imread(imagePath.c_str(), 0).copyTo(img);
 		if (img.empty())
 		{
 			cerr << "image is empty! path: " << imagePath << endl;
@@ -117,14 +131,14 @@ void DrawIMGandGLinMainThrd(){
 		// cout << "Image t : " << fixed << dStampNSec << " Name: " << sImgFileName << endl;
 		string imagePath = sData_path + "cam0/data/" + sImgFileName;
 
-		Mat img = imread(imagePath.c_str(), 0);
+		UMat img = imread(imagePath.c_str(), 0);
 		if (img.empty())
 		{
 			cerr << "image is empty! path: " << imagePath << endl;
 			return;
 		}
 		//pSystem->PubImageData(dStampNSec / 1e9, img);
-		cv::Mat show_img;
+		cv::UMat show_img;
 		cv::cvtColor(img, show_img, CV_GRAY2RGB);
 		if (SHOW_TRACK)
 		{
