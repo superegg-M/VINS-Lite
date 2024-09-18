@@ -7,6 +7,8 @@
 #include <csignal>
 
 #include <opencv2/opencv.hpp>
+#include <opencv2/xfeatures2d.hpp>
+#include <opencv2/features2d.hpp>
 #include <eigen3/Eigen/Dense>
 
 #include "camodocal/camera_models/CameraFactory.h"
@@ -60,6 +62,12 @@ class FeatureTracker
     camodocal::CameraPtr m_camera;
     double cur_time;
     double prev_time;
+
+    std::vector<cv::KeyPoint> keypoints1, keypoints2;
+    cv::UMat descriptors1, descriptors2;
+    std::vector<cv::Point2f> match_pts1,match_pts2;
+    // std::vector<cv::KeyPoint> cur_kps, forw_kps;
+
 
     static int n_id;
 };
