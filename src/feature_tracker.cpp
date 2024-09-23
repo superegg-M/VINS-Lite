@@ -119,36 +119,55 @@ void FeatureTracker::readImage(const cv::UMat &_img, double _cur_time)
     if (PUB_THIS_FRAME)
     {
         // 初始化SIFT检测器
-        cv::Ptr<cv::xfeatures2d::SIFT> sift = cv::xfeatures2d::SIFT::create(MAX_CNT);
+        cv::Ptr<cv::xfeatures2d::SIFT> sift = cv::xfeatures2d::SIFT::create(MAX_CNT,4,0.06,20);
+        // cv::Ptr<cv::ORB> orb=cv::ORB::create(MAX_CNT);
+        int minHessian = 5000;
+        cv::Ptr<cv::xfeatures2d::SURF> surf = cv::xfeatures2d::SURF::create(minHessian);
 
         // 检测特征点和计算描述符
         // if(!keypoints1.size())
-        sift->detectAndCompute(cur_img, cv::noArray(), keypoints1, descriptors1);
+        surf->detectAndCompute(cur_img, cv::noArray(), keypoints1, descriptors1);
 
-        sift->detectAndCompute(forw_img, cv::noArray(), keypoints2, descriptors2);
+        surf->detectAndCompute(forw_img, cv::noArray(), keypoints2, descriptors2);
 
-        // 设置FLANN参数
-        cv::FlannBasedMatcher matcher;
+        // 设置BF参数
+        // cv::BFMatcher matcher(cv::NORM_L2);
+        // cv::FlannBasedMatcher matcher();
 
         // 匹配描述符
-        std::vector<cv::DMatch> matches;
-        matcher.match(descriptors1, descriptors2, matches);
+        // std::vector<cv::DMatch> matches,good_matches;
+        // matcher.match(descriptors1, descriptors2, matches);
 
-        // // 筛选匹配（可选）
-        // double max_dist = 0; double min_dist = 100;
-        // for (int i = 0; i < descriptors1.rows; i++) {
-        //     double dist = matches[i].distance;
-        //     if (dist < min_dist) min_dist = dist;
-        //     if (dist > max_dist) max_dist = dist;
-        // }
-        // std::vector<cv::DMatch> good_matches;
-        // for (int i = 0; i < descriptors1.rows; i++) {
-        //     if (matches[i].distance <= std::max(2 * min_dist, 0.02)) {
-        //         good_matches.push_back(matches[i]);
+        cv::Ptr<cv::DescriptorMatcher> matcher = cv::DescriptorMatcher::create(cv::DescriptorMatcher::FLANNBASED);
+        std::vector< std::vector<cv::DMatch> > knn_matches;
+        matcher->knnMatch( descriptors1, descriptors2, knn_matches, 2 );
+        //-- 使用洛氏比率测试筛选匹配项
+        const float ratio_thresh = 0.7f;
+        std::vector<cv::DMatch> good_matches;
+        for (size_t i = 0; i < knn_matches.size(); i++)
+        {
+            if (knn_matches[i][0].distance < ratio_thresh * knn_matches[i][1].distance)
+            {
+                good_matches.push_back(knn_matches[i][0]);
+            }
+        }
+
+        // // 计算最大最小距离
+        // auto min_max=minmax_element(matches.begin(),matches.end(),
+        //     [](const cv::DMatch &m1,const cv::DMatch &m2){return m1.distance<m2.distance;});
+        
+        // double min_dist = min_max.first->distance;
+        // double max_dist = min_max.second->distance;
+        // cout<<"!!!!!!!!!!!!!!!!!!!min_dist:"<<min_dist<<endl;
+
+        // // 筛选好的匹配
+        // for (const auto& m : matches) {
+        //     if (m.distance <= max(2*min_dist,10.0)) {
+        //         good_matches.push_back(m);
         //     }
         // }
 
-        std::vector<cv::DMatch> good_matches=matches;
+        // std::vector<cv::DMatch> good_matches=matches;
 
         for(int i=0;i<(int)good_matches.size();i++){
             match_pts1.push_back(keypoints1[good_matches[i].queryIdx].pt);
@@ -163,36 +182,36 @@ void FeatureTracker::readImage(const cv::UMat &_img, double _cur_time)
                 track_cnt.push_back(1);
             }
         }
-            cout<<"-----------size0: "<<cur_pts.size()<<endl;
         // 删除未跟踪点
+        int j=0;
         for(int i=0;i<(int)cur_pts.size();i++){
-            int j=0;
             if(find(match_pts1.begin(),match_pts1.end(),cur_pts[i])!=match_pts1.end()){
-                cur_pts[j++]=cur_pts[i];
-                ids[j++]=ids[i];
-                track_cnt[j++]=track_cnt[i];
+                cur_pts[j]=cur_pts[i];
+                ids[j]=ids[i];
+                track_cnt[j]=track_cnt[i];
                 if(cur_un_pts.size()>0){
-                    cur_un_pts[j++]=cur_un_pts[i];
+                    cur_un_pts[j]=cur_un_pts[i];
                 }
                 forw_pts.push_back(match_pts2[i]);
-            }
-            cur_pts.resize(j);
-            ids.resize(j);            
-            track_cnt.resize(j);
-            if(cur_un_pts.size()>0){
-                cur_un_pts.resize(j);
+                j++;
             }
         }
-
-    cout<<"-----------size1: "<<cur_pts.size()<<endl;
+        cur_pts.resize(j);
+        ids.resize(j);            
+        track_cnt.resize(j);
+        if(cur_un_pts.size()>0){
+            cur_un_pts.resize(j);
+        }
 
         cout<<"match size:"<<good_matches.size()<<endl;
-        // 绘制匹配结果
-        cv::UMat img_matches;
-        cv::drawMatches(cur_img, keypoints1, forw_img, keypoints2, good_matches, img_matches);
-        // 显示图像
-        cv::imshow("Matches", img_matches);
-        cv::waitKey(100);
+        cout<<"tracker size: "<<cur_pts.size()<<endl;
+
+        // // 绘制匹配结果
+        // cv::UMat img_matches;
+        // cv::drawMatches(cur_img, keypoints1, forw_img, keypoints2, good_matches, img_matches);
+        // // 显示图像
+        // cv::imshow("Matches", img_matches);
+        // cv::waitKey(1);
 
         
         // rejectWithF();  // 根据基础矩阵过滤掉一部分outliner的点
@@ -353,7 +372,6 @@ void FeatureTracker::showUndistortion(const string &name)
 
 void FeatureTracker::undistortedPoints()
 {
-    cout<<"-----------size2: "<<cur_pts.size()<<endl;
     cur_un_pts.clear();
     cur_un_pts_map.clear();
     //cv::undistortPoints(cur_pts, un_pts, K, cv::UMat());
@@ -365,7 +383,7 @@ void FeatureTracker::undistortedPoints()
 
         cur_un_pts.push_back(cv::Point2f(b.x() / b.z(), b.y() / b.z()));
         cur_un_pts_map.insert(make_pair(ids[i], cv::Point2f(b.x() / b.z(), b.y() / b.z())));
-        printf("cur pts id %d %f %f\n", ids[i], cur_un_pts[i].x, cur_un_pts[i].y);
+        // printf("cur pts id %d %f %f\n", ids[i], cur_un_pts[i].x, cur_un_pts[i].y);
     }
     // caculate points velocity
     if (!prev_un_pts_map.empty())
