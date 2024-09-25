@@ -126,7 +126,7 @@ void FeatureTracker::readImage(const cv::UMat &_img, double _cur_time)
 
         // 检测特征点和计算描述符
         // if(!keypoints1.size())
-        surf->detectAndCompute(cur_img, cv::noArray(), keypoints1, descriptors1);
+        // surf->detectAndCompute(cur_img, cv::noArray(), keypoints1, descriptors1);
 
         surf->detectAndCompute(forw_img, cv::noArray(), keypoints2, descriptors2);
 
@@ -206,13 +206,14 @@ void FeatureTracker::readImage(const cv::UMat &_img, double _cur_time)
         cout<<"match size:"<<good_matches.size()<<endl;
         cout<<"tracker size: "<<cur_pts.size()<<endl;
 
-        // // 绘制匹配结果
-        // cv::UMat img_matches;
-        // cv::drawMatches(cur_img, keypoints1, forw_img, keypoints2, good_matches, img_matches);
-        // // 显示图像
-        // cv::imshow("Matches", img_matches);
-        // cv::waitKey(1);
-
+#ifdef DISPLAY_TRAJ
+        // 绘制匹配结果
+        cv::UMat img_matches;
+        cv::drawMatches(cur_img, keypoints1, forw_img, keypoints2, good_matches, img_matches);
+        // 显示图像
+        cv::imshow("Matches", img_matches);
+        cv::waitKey(1);
+#endif
         
         // rejectWithF();  // 根据基础矩阵过滤掉一部分outliner的点
         //ROS_DEBUG("set mask begins");

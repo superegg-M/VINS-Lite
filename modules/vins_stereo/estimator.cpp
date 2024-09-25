@@ -466,16 +466,19 @@ namespace vins {
             for (unsigned int n = 0; n < NUM_THREADS; ++n) {
                 for (size_t k = 0; k < _num_edges_12[n]; ++k) {
                     _problem.add_reproj_edge(&_edges_12_vec[n][k]);
+                    num_reproj_edges++;
                 }
             }
             for (unsigned int n = 0; n < NUM_THREADS; ++n) {
                 for (size_t k = 0; k < _num_edges_21[n]; ++k) {
                     _problem.add_reproj_edge(&_edges_21_vec[n][k]);
+                    num_reproj_edges++;
                 }
             }
             for (unsigned int n = 0; n < NUM_THREADS; ++n) {
                 for (size_t k = 0; k < _num_edges_22[n]; ++k) {
                     _problem.add_reproj_edge(&_edges_22_vec[n][k]);
+                    num_reproj_edges++;
                 }
             }
             // 需要边缘化的landmark

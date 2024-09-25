@@ -64,7 +64,7 @@ target_link_libraries(vins_stereo PUBLIC graph_optimization OpenMP::OpenMP_CXX $
 
 target_compile_definitions(vins_stereo PRIVATE -DUSE_OPENMP)
 target_compile_definitions(vins_stereo PRIVATE -DNUM_THREADS=4)
-# target_compile_definitions(vins_stereo PRIVATE -DPRINT_INFO)
+target_compile_definitions(vins_stereo PRIVATE -DPRINT_INFO)
 # target_compile_definitions(vins_stereo PRIVATE -DREDUCE_MOTION)
 target_compile_definitions(vins_stereo PRIVATE -DNUM_OF_CAM=1)
 target_compile_definitions(vins_stereo PRIVATE -DUSE_IMU)

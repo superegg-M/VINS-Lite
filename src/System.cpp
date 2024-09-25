@@ -135,6 +135,8 @@ void System::PubImageData(double dStampSec, UMat &img)
                     feature_points->velocity_y_of_point.push_back(pts_velocity[j].y);
                 }
             }
+                                               cout << " feature_points size: " << feature_points->points.size() << endl;
+
             //}
             // skip the first image; since no optical speed on frist image
             if (!init_pub)
@@ -146,8 +148,8 @@ void System::PubImageData(double dStampSec, UMat &img)
             {
                 m_buf.lock();
                 feature_buf.push(feature_points);
-                // cout << "5 PubImage t : " << fixed << feature_points->header
-                //     << " feature_buf size: " << feature_buf.size() << endl;
+                cout << "5 PubImage t : " << fixed << feature_points->header
+                    << " feature_buf size: " << feature_buf.size() << endl;
                 m_buf.unlock();
                 con.notify_one();
             }
@@ -316,8 +318,8 @@ void System::ProcessBackEnd()
                 }
             }
 
-            // cout << "processing vision data with stamp:" << img_msg->header 
-            //     << " img_msg->points.size: "<< img_msg->points.size() << endl;
+            cout << "processing vision data with stamp:" << img_msg->header 
+                << " img_msg->points.size: "<< img_msg->points.size() << endl;
 
             // TicToc t_s;
             // map<int, vector<pair<int, Eigen::Matrix<double, 7, 1>>>> image;
