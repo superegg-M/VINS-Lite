@@ -138,10 +138,12 @@ void FeatureTracker::readImage(const cv::UMat &_img, double _cur_time)
         // std::vector<cv::DMatch> matches,good_matches;
         // matcher.match(descriptors1, descriptors2, matches);
 
+        // 设置FLANN匹配器
+        // surf是浮点型描述子，使用NORM_L2
         cv::Ptr<cv::DescriptorMatcher> matcher = cv::DescriptorMatcher::create(cv::DescriptorMatcher::FLANNBASED);
         std::vector< std::vector<cv::DMatch> > knn_matches;
         matcher->knnMatch( descriptors1, descriptors2, knn_matches, 2 );
-        //-- 使用洛氏比率测试筛选匹配项
+        // 使用洛氏比率测试筛选匹配项
         const float ratio_thresh = 0.7f;
         std::vector<cv::DMatch> good_matches;
         for (size_t i = 0; i < knn_matches.size(); i++)
@@ -158,7 +160,7 @@ void FeatureTracker::readImage(const cv::UMat &_img, double _cur_time)
         
         // double min_dist = min_max.first->distance;
         // double max_dist = min_max.second->distance;
-        // cout<<"!!!!!!!!!!!!!!!!!!!min_dist:"<<min_dist<<endl;
+        // cout<<"min_dist:"<<min_dist<<endl;
 
         // // 筛选好的匹配
         // for (const auto& m : matches) {
@@ -214,60 +216,7 @@ void FeatureTracker::readImage(const cv::UMat &_img, double _cur_time)
         cv::imshow("Matches", img_matches);
         cv::waitKey(1);
 #endif
-        
-        // rejectWithF();  // 根据基础矩阵过滤掉一部分outliner的点
-        //ROS_DEBUG("set mask begins");
-        // TicToc t_m;
-        // setMask();      // 计算mask, 并且mask掉不需要的点
-        //ROS_DEBUG("set mask costs %fms", t_m.toc());
-
-        //ROS_DEBUG("detect feature begins");
-        // TicToc t_t;
-        // int n_max_cnt = MAX_CNT - static_cast<int>(forw_pts.size());
-        // if (n_max_cnt > 0)      // 由于对点进行了过滤和mask, 所以会存在点不够的情况
-        // {
-        // if(mask.empty())
-        //     cout << "mask is empty " << endl;
-        // if (mask.type() != CV_8UC1)
-        //     cout << "mask type wrong " << endl;
-        // if (mask.size() != forw_img.size())
-        //     cout << "wrong size " << endl;
-
-        // // 角点提取(默认为shi-tomasi, 传入true则为Harris)    
-        // cv::goodFeaturesToTrack(forw_img, n_pts, MAX_CNT - forw_pts.size(), 0.01, MIN_DIST, mask);
-        
-
-        // }
-        // else
-        //     n_pts.clear();
-        //ROS_DEBUG("detect feature costs: %fms", t_t.toc());
-
-        //ROS_DEBUG("add feature begins");
-        // TicToc t_a;
-        // addPoints();    // 把特征点n_pts加入光流点forw_pts中
-        //ROS_DEBUG("selectFeature costs: %fms", t_a.toc());
     }
-
-    // if (cur_pts.size() > 0)
-    // {
-    //     TicToc t_o;
-    //     vector<uchar> status;
-    //     vector<float> err;
-    //     // cv::calcOpticalFlowPyrLK(cur_img, forw_img, cur_pts, forw_pts, status, err, cv::Size(21, 21), 3);
-
-
-    //     // for (int i = 0; i < int(forw_pts.size()); i++)
-    //     //     if (status[i] && !inBorder(forw_pts[i]))    // 若超过边界, 依然会把该点的跟踪设为失败
-    //     //         status[i] = 0;
-    //     // // TODO: 使用list代替vector也能实现更快的删除, 但是cur_pts和forw_pts必须为数组        
-    //     // reduceVector(prev_pts, status);
-    //     // reduceVector(cur_pts, status);
-    //     // reduceVector(forw_pts, status);
-    //     // reduceVector(ids, status);
-    //     // reduceVector(cur_un_pts, status);
-    //     // reduceVector(track_cnt, status);
-    //     // //ROS_DEBUG("temporal optical flow costs: %fms", t_o.toc());
-    // }
 
     prev_img = cur_img;
     prev_pts = cur_pts;
