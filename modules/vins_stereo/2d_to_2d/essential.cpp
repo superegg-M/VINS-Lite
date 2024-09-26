@@ -26,7 +26,8 @@ namespace vins {
         vector<unsigned long> landmark_ids;
         landmark_ids.reserve(max_num_points);
 
-        // 找出匹配对
+        // 找出匹配对, 同时计算平均视差
+        double average_parallax = 0.;
         for (auto &feature_i : frame_i->features) {
             unsigned long landmark_id = feature_i.first;
             auto &&feature_j = frame_j->features.find(landmark_id);
@@ -36,6 +37,11 @@ namespace vins {
             pts1.emplace_back(feature_i.second->points[0].x(), feature_i.second->points[0].y());
             pts2.emplace_back(feature_j->second->points[0].x(), feature_j->second->points[0].y());
             landmark_ids.emplace_back(landmark_id);
+
+            // 计算视差
+            double du = pts1.back().x - pts2.back().x;
+            double dv = pts1.back().y - pts2.back().y;
+            average_parallax += max(abs(du), abs(dv));
         }
 
         // 匹配对必须大于一定数量
@@ -44,11 +50,25 @@ namespace vins {
             return false;
         }
 
+        // 平均视差必须大于一定值
+        average_parallax /= double(num_points);
+#ifdef PRINT_INFO
+        std::cout << "average_parallax = " << average_parallax << std::endl;
+#endif
+        if (average_parallax * 460. < 30.) {
+            return false;
+        }
+
         // 调用openCV计算本质矩阵
         cv::Mat is_inliers;
         cv::Mat Et = cv::findFundamentalMat(pts1, pts2, cv::FM_RANSAC, 0.3 / 460, 0.99, is_inliers);  // 行主序
         Eigen::Map<Eigen::Matrix<double, 3, 3, Eigen::ColMajor>> best_E(Et.ptr<double>(0)); // 列主序
         unsigned long num_inliers = static_cast<unsigned long>(cv::sum(is_inliers)[0]);
+
+        // 内点必须大于一定值
+        if (10 * num_inliers < 9 * th_count) {
+            return false;
+        }
 
         Eigen::JacobiSVD<Mat33> E_svd(best_E, Eigen::ComputeFullU | Eigen::ComputeFullV);
         Mat33 V = E_svd.matrixV();
